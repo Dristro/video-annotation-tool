@@ -41,6 +41,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   which Homebrew's libmpv still references from an unused legacy code
   path) via `playback/_mpv_bootstrap.py`. See `CLAUDE.md` for the full
   explanation.
+- Fixed a real-launch-only crash (not caught by the offscreen pytest
+  suite) where `QApplication` resets `LC_NUMERIC` after python-mpv's
+  import-time fix, causing libmpv to hard-abort the process on the first
+  video load. Fixed in `MpvPlayer.__init__`; see `CLAUDE.md`.
 
 ### Known issues / deferred
 

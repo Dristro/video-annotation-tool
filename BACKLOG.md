@@ -59,6 +59,18 @@ promise of order — just so nothing gets silently lost. Move items to
       demuxer readahead rather than explicit chunked loading logic in our
       code. Revisit if real-world stutter is observed on large files.
 
+## Verification gaps
+
+- [ ] The agent's shell environment has no attached interactive GUI/display
+      session (confirmed: `screencapture` and `System Events` can't see the
+      launched process's window), so the actual rendered UI has only been
+      verified by launching the real (non-offscreen) app against a real
+      project + real ffmpeg-generated test video and confirming it stays
+      alive with no crash -- not by visually inspecting the layout. **Please
+      run `.venv/bin/vat` yourself and sanity-check the actual look/feel**
+      (panel proportions, timeline rendering, DaVinci-Resolve-likeness)
+      before relying on it.
+
 ## Testing gaps
 
 - [ ] `playback/mpv_player.py` and `playback/preloader.py` have no direct

@@ -5,6 +5,25 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed (reported: video played in a separate OS window; slider only
+seeked on release, not while dragging)
+
+- Video opened in its own separate window instead of embedding into the
+  main tool window. Root cause: `MainWindow.__init__` called
+  `refresh_playlist()` synchronously, which can auto-select the first
+  video and load it -- constructing a real `MpvPlayer`, which calls
+  `surface.winId()` to hand mpv a native window to embed into. This ran
+  *before* `app.py` calls `window.show()`, so the widget had never been
+  part of an on-screen window hierarchy yet; mpv fell back to opening its
+  own top-level window instead of embedding into ours. Fixed by deferring
+  that first `refresh_playlist()` call via `QTimer.singleShot(0, ...)`,
+  which only fires once the Qt event loop actually starts running (i.e.
+  after `.show()` has already executed).
+- Scrubbing the position slider only sought once the mouse was released.
+  Added a `sliderMoved` connection (fires continuously during a drag,
+  unlike `valueChanged`) that seeks live as the slider moves, so scrubbing
+  now updates the video in real time.
+
 ### Fixed (reported from a real run on the `prod` branch)
 
 - **Video didn't render** (audio/scrubbing worked, frame stayed blank):

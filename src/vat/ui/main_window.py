@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QFileDialog, QMainWindow, QMessageBox, QSplitter, QVBoxLayout, QWidget
 
@@ -63,7 +63,20 @@ class MainWindow(QMainWindow):
 
         self.inspector_panel.set_labels(self.project.config.labels)
         self._register_label_shortcuts()
-        self.refresh_playlist()
+
+        # Deferred rather than called directly: refresh_playlist() can
+        # auto-select the first video, which loads it into VideoPanel and
+        # constructs a real MpvPlayer -- which calls surface.winId() to hand
+        # mpv a native window to embed into. At this point in __init__, this
+        # window has never been shown (app.py calls .show() only after
+        # MainWindow() returns), so the native view mpv attaches to isn't
+        # part of a real on-screen window hierarchy yet. Observed as a real
+        # bug: mpv fell back to opening its own separate top-level window
+        # instead of embedding into ours. QTimer.singleShot(0, ...) defers
+        # this to the next event-loop iteration, which only happens once
+        # app.exec() starts -- by then .show() has already run and the
+        # window has a real native handle to embed into.
+        QTimer.singleShot(0, self.refresh_playlist)
 
     # -- Menu ------------------------------------------------------------
     def _build_menu(self) -> None:

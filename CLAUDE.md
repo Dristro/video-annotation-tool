@@ -113,6 +113,22 @@ deadlock in your head first: does it call a synchronous mpv getter/setter
 from the main thread more than once, without waiting on an async event in
 between? If yes, it can hang exactly like this did.
 
+A fifth one: **never call `surface.winId()` (i.e. never construct
+`MpvPlayer`) before the top-level window has been shown.** `winId()`
+forces creation of the widget's native view immediately, regardless of
+whether its parent window has ever been shown. If that happens too early,
+mpv can end up attached to a native view that isn't really part of the
+final on-screen window hierarchy yet, and falls back to opening its own
+separate top-level window instead of embedding into ours -- reproduced
+this for real: `MainWindow.__init__` called `refresh_playlist()`
+synchronously, which can auto-select and load the first video before
+`app.py`'s `window.show()` ever runs. Fixed by deferring that first
+`refresh_playlist()` call with `QTimer.singleShot(0, self.refresh_playlist)`
+so it only fires once the Qt event loop is actually running (after
+`.show()`). Any code path that can trigger the first `VideoPanel.load()`
+must run after the window is shown -- don't reintroduce an eager call in
+`__init__`.
+
 ## Architecture
 
 ```

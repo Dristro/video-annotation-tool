@@ -60,6 +60,11 @@ class VideoPanel(QWidget):
         self._position_slider = QSlider(Qt.Orientation.Horizontal)
         self._position_slider.setRange(0, 1000)
         self._position_slider.sliderPressed.connect(self._on_seek_start)
+        # sliderMoved fires continuously while dragging (unlike valueChanged,
+        # it only fires for user drags, not programmatic setValue calls from
+        # _handle_position) -- seeking on every move is what makes scrubbing
+        # live instead of only jumping once the mouse is released.
+        self._position_slider.sliderMoved.connect(self._on_slider_moved)
         self._position_slider.sliderReleased.connect(self._on_seek_end)
         controls.addWidget(self._position_slider, stretch=1)
 
@@ -113,10 +118,14 @@ class VideoPanel(QWidget):
     def _on_seek_start(self) -> None:
         self._seeking = True
 
-    def _on_seek_end(self) -> None:
+    def _on_slider_moved(self, value: int) -> None:
         if self._duration > 0:
-            fraction = self._position_slider.value() / 1000.0
-            self.seek_to(fraction * self._duration)
+            self.seek_to((value / 1000.0) * self._duration)
+
+    def _on_seek_end(self) -> None:
+        # The last sliderMoved already seeked to this value; _seeking just
+        # needs clearing so _handle_position resumes driving the slider from
+        # mpv's actual position again.
         self._seeking = False
 
     def _handle_position(self, value: float) -> None:

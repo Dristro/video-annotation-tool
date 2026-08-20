@@ -5,6 +5,24 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed (reported from a real run on the `prod` branch)
+
+- **Video didn't render** (audio/scrubbing worked, frame stayed blank):
+  `MpvPlayer` was passing `vo="libmpv"`, which is the driver for mpv's
+  *render API* (rendering into an offscreen FBO you manage yourself), not
+  for `wid`-based window embedding. Removed it so mpv falls back to its
+  default `gpu`/libplacebo VO, which is what actually draws into an
+  embedded window.
+- Removed `WA_PaintOnScreen` from `VideoSurface` — Qt's docs call this
+  attribute unsupported on macOS's Cocoa backend; it was producing the
+  repeating `QWidget::paintEngine: Should no longer be called` warning and
+  fighting mpv's native rendering.
+- Fixed a `modalSession has been exited prematurely` Cocoa warning caused
+  by `ProjectDialog` staying visible+modal underneath `NewProjectDialog`
+  while the latter opened native folder pickers (three stacked modal
+  sessions). `ProjectDialog` now hides itself while `NewProjectDialog` is
+  up.
+
 ### Added
 
 - Project scaffolding: `src/vat` package, `pyproject.toml` (PySide6 +
@@ -31,8 +49,12 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   (seek), and per-label custom shortcut keys (editable at runtime).
 - App-level "remember last opened project" via `~/Library/Application
   Support/vat/settings.json`.
-- pytest suite (42 tests) covering models, project_store, annotation_store,
+- pytest suite (45 tests) covering models, project_store, annotation_store,
   the Project facade, video_scanner, and MainWindow's controller glue.
+- `Label` gained a `description` field. Label shortcuts are now full key
+  sequences (e.g. `Ctrl+Shift+G`), captured via `QKeySequenceEdit`, not a
+  single character. The label editor is now a table (index / name /
+  description / shortcut) instead of a plain list, per user feedback.
 
 ### Fixed
 

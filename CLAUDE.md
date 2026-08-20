@@ -67,6 +67,18 @@ video was loaded. Fixed by re-asserting
 `MpvPlayer.__init__` (`src/vat/playback/mpv_player.py`), right before
 `mpv.MPV(...)` is constructed, rather than relying on import-time ordering.
 
+A third one, found from an actual run (not reproducible headlessly at all,
+since it only affects whether pixels show up on screen): **don't pass
+`vo="libmpv"` to `mpv.MPV()`**. That VO name is for mpv's *render API*
+(rendering into an FBO you manage yourself), not for `wid`-based window
+embedding — with it set, mpv played audio and responded to seeks
+completely normally while the video frame stayed blank, because it never
+actually drew into the widget's window. Leave `vo` unset (mpv's default
+`gpu`/libplacebo VO is what supports `wid` embedding). Relatedly, don't set
+`WA_PaintOnScreen` on `VideoSurface` — Qt's docs mark it unsupported on
+macOS's Cocoa backend, and it produces `QWidget::paintEngine: Should no
+longer be called` spam.
+
 ## Architecture
 
 ```

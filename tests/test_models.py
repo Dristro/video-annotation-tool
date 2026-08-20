@@ -17,8 +17,12 @@ class TestLabel:
             Label(name="   ")
 
     def test_round_trip(self):
-        label = Label(name="goal", shortcut="g")
+        label = Label(name="goal", shortcut="g", description="Ball crosses the line")
         assert Label.from_dict(label.to_dict()) == label
+
+    def test_description_defaults_empty_and_strips(self):
+        assert Label(name="goal").description == ""
+        assert Label(name="goal", description="  scored  ").description == "scored"
 
 
 class TestCut:

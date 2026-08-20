@@ -13,13 +13,20 @@ from PySide6.QtWidgets import QWidget  # noqa: E402
 
 
 class VideoSurface(QWidget):
-    """A bare QWidget whose native window id is handed to mpv for rendering."""
+    """A bare QWidget whose native window id is handed to mpv for rendering.
+
+    WA_PaintOnScreen is deliberately NOT set here: Qt's docs call it out as
+    unsupported on macOS's Cocoa backend, and setting it produced exactly
+    the "QWidget::paintEngine: Should no longer be called" warning spam plus
+    a black/non-rendering video surface (Qt's own paint system fighting
+    mpv's native NSView-backed rendering). WA_NativeWindow alone is enough
+    to force a real native window Qt can hand off via winId().
+    """
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
         self.setAttribute(Qt.WidgetAttribute.WA_DontCreateNativeAncestors, True)
-        self.setAttribute(Qt.WidgetAttribute.WA_PaintOnScreen, True)
         self.setAutoFillBackground(False)
 
 
@@ -40,7 +47,13 @@ class MpvPlayer:
         locale.setlocale(locale.LC_NUMERIC, "C")
         self._mpv = mpv.MPV(
             wid=str(int(surface.winId())),
-            vo="libmpv",
+            # Deliberately no `vo=` override: mpv's default ("gpu"/libplacebo)
+            # is what actually supports wid-based window embedding on macOS.
+            # `vo=libmpv` is a *different* thing -- it's the driver used for
+            # the C render API (rendering into an offscreen FBO you manage
+            # yourself), not for embedding via a native window id. Setting it
+            # here made mpv create its own context without ever drawing into
+            # this widget's window: audio/seeking worked, video stayed blank.
             hwdec="auto",
             demuxer_max_bytes="64MiB",
             demuxer_max_back_bytes="16MiB",

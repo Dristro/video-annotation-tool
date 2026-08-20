@@ -71,14 +71,20 @@ class Project:
         self.annotation_store.remove_cut(rel_path, cut_id)
 
     # -- Labels ------------------------------------------------------------
-    def add_label(self, name: str, shortcut: str = "") -> Label:
-        return self.project_store.add_label(name, shortcut)
+    def add_label(self, name: str, shortcut: str = "", description: str = "") -> Label:
+        return self.project_store.add_label(name, shortcut, description)
 
     def remove_labels(self, names: list[str]) -> None:
         self.project_store.remove_labels(names)
 
-    def rename_label(self, old_name: str, new_name: str, new_shortcut: str | None = None) -> Label:
-        label = self.project_store.rename_label(old_name, new_name, new_shortcut)
+    def rename_label(
+        self,
+        old_name: str,
+        new_name: str,
+        new_shortcut: str | None = None,
+        new_description: str | None = None,
+    ) -> Label:
+        label = self.project_store.rename_label(old_name, new_name, new_shortcut, new_description)
         if new_name != old_name:
             self.annotation_store.rename_label_everywhere(old_name, new_name)
         return label

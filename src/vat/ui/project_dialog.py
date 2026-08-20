@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
-    QListWidget,
-    QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
 )
 
@@ -51,8 +53,16 @@ class NewProjectDialog(QDialog):
         layout.addLayout(vid_row)
 
         layout.addWidget(QLabel("Initial labels (can be edited later):"))
-        self._labels_list = QListWidget()
-        layout.addWidget(self._labels_list)
+        self._labels_table = QTableWidget(0, 3)
+        self._labels_table.setHorizontalHeaderLabels(["Name", "Description", "Shortcut"])
+        self._labels_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._labels_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._labels_table.verticalHeader().setVisible(False)
+        header = self._labels_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        layout.addWidget(self._labels_table)
         label_btn_row = QHBoxLayout()
         add_label_btn = QPushButton("Add Label…")
         add_label_btn.clicked.connect(self._add_label)
@@ -80,16 +90,24 @@ class NewProjectDialog(QDialog):
     def _add_label(self) -> None:
         dialog = _LabelFormDialog(self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            name, shortcut = dialog.values()
-            if name:
-                self._labels.append(Label(name=name, shortcut=shortcut))
-                self._labels_list.addItem(QListWidgetItem(f"{name}  [{shortcut}]" if shortcut else name))
+            name, description, shortcut = dialog.values()
+            if not name:
+                return
+            self._labels.append(Label(name=name, shortcut=shortcut, description=description))
+            self._refresh_labels_table()
 
     def _remove_label(self) -> None:
-        row = self._labels_list.currentRow()
+        row = self._labels_table.currentRow()
         if row >= 0:
-            self._labels_list.takeItem(row)
             del self._labels[row]
+            self._refresh_labels_table()
+
+    def _refresh_labels_table(self) -> None:
+        self._labels_table.setRowCount(len(self._labels))
+        for row, label in enumerate(self._labels):
+            self._labels_table.setItem(row, 0, QTableWidgetItem(label.name))
+            self._labels_table.setItem(row, 1, QTableWidgetItem(label.description))
+            self._labels_table.setItem(row, 2, QTableWidgetItem(label.shortcut))
 
     def _on_accept(self) -> None:
         project_dir = self._project_dir_edit.text().strip()
@@ -130,10 +148,18 @@ class ProjectDialog(QDialog):
         layout.addWidget(quit_btn)
 
     def _on_new(self) -> None:
+        # Hide while NewProjectDialog (which itself opens native folder
+        # pickers) is up: leaving this dialog visible+modal underneath
+        # stacks three modal sessions (this -> NewProjectDialog -> native
+        # panel), which macOS logs as "modalSession has been exited
+        # prematurely". Two levels is fine; three isn't.
+        self.hide()
         dialog = NewProjectDialog(self)
         if dialog.exec() == QDialog.DialogCode.Accepted and dialog.project is not None:
             self.project = dialog.project
             self.accept()
+        else:
+            self.show()
 
     def _on_open(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Choose Project Directory")

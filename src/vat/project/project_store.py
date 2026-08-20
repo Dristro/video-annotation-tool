@@ -74,10 +74,10 @@ class ProjectStore:
         self.save()
 
     # -- Label management -------------------------------------------------
-    def add_label(self, name: str, shortcut: str = "") -> Label:
+    def add_label(self, name: str, shortcut: str = "", description: str = "") -> Label:
         if self.config.find_label(name) is not None:
             raise DuplicateLabelError(f"Label '{name}' already exists")
-        label = Label(name=name, shortcut=shortcut)
+        label = Label(name=name, shortcut=shortcut, description=description)
         self.config.labels.append(label)
         self.save()
         return label
@@ -87,7 +87,13 @@ class ProjectStore:
         self.config.labels = [l for l in self.config.labels if l.name not in name_set]
         self.save()
 
-    def rename_label(self, old_name: str, new_name: str, new_shortcut: str | None = None) -> Label:
+    def rename_label(
+        self,
+        old_name: str,
+        new_name: str,
+        new_shortcut: str | None = None,
+        new_description: str | None = None,
+    ) -> Label:
         label = self.config.find_label(old_name)
         if label is None:
             raise LabelNotFoundError(f"Label '{old_name}' not found")
@@ -97,5 +103,7 @@ class ProjectStore:
         label.name = new_name
         if new_shortcut is not None:
             label.shortcut = new_shortcut.strip()
+        if new_description is not None:
+            label.description = new_description.strip()
         self.save()
         return label

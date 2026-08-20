@@ -68,6 +68,20 @@ def test_rename_label_updates_name_and_shortcut(tmp_project_dir, tmp_videos_dir)
     assert renamed.shortcut == "s"
 
 
+def test_add_label_with_description(tmp_project_dir, tmp_videos_dir):
+    store = ProjectStore.create(tmp_project_dir, tmp_videos_dir)
+    store.add_label("goal", "g", "Ball fully crosses the line")
+    label = store.config.find_label("goal")
+    assert label.description == "Ball fully crosses the line"
+
+
+def test_rename_label_updates_description(tmp_project_dir, tmp_videos_dir):
+    store = ProjectStore.create(tmp_project_dir, tmp_videos_dir)
+    store.add_label("goal", "g", "old description")
+    store.rename_label("goal", "goal", new_description="new description")
+    assert store.config.find_label("goal").description == "new description"
+
+
 def test_rename_missing_label_raises(tmp_project_dir, tmp_videos_dir):
     store = ProjectStore.create(tmp_project_dir, tmp_videos_dir)
     with pytest.raises(LabelNotFoundError):

@@ -75,27 +75,39 @@ class MpvPlayer:
     def pause(self) -> None:
         self._mpv.pause = True
 
-    def toggle_pause(self) -> None:
-        self._mpv.pause = not self._mpv.pause
-
-    @property
-    def is_paused(self) -> bool:
-        return bool(self._mpv.pause)
+    def set_paused(self, paused: bool) -> None:
+        self._mpv.pause = paused
 
     def seek(self, seconds: float, relative: bool = False) -> None:
         mode = "relative" if relative else "absolute"
         self._mpv.seek(seconds, mode)
 
-    @property
-    def position(self) -> float:
-        return self._mpv.time_pos or 0.0
-
-    @property
-    def duration(self) -> float | None:
-        return self._mpv.duration
-
+    # -- Async observers ---------------------------------------------------
+    # Deliberately no synchronous position/duration/pause *getters* here.
+    # python-mpv's observe_property callbacks fire on its own background
+    # event thread via mpv_wait_event, which is safe to call from any
+    # thread. A synchronous mpv_get_property call from the Qt main thread,
+    # by contrast, blocks on mpv's internal core dispatch lock -- and on
+    # macOS, mpv's video output does a dispatch_sync onto the *main queue*
+    # during its Cocoa/Metal setup shortly after load(). If the main thread
+    # is itself blocked inside mpv_get_property at that moment (e.g. a
+    # polling QTimer firing every 200ms), neither side can make progress:
+    # the main thread can't return to pump Cocoa's run loop (which mpv's
+    # main-queue dispatch needs), and mpv's core thread can't release the
+    # lock the main thread is waiting on until that dispatch completes.
+    # Reproduced this exact deadlock (via `sample <pid>` thread dumps) when
+    # VideoPanel polled `.position`/`.duration` properties on a QTimer --
+    # it hung forever, every time, because the timer fired within
+    # milliseconds of load(). Callers must use the observers below and
+    # cache the values themselves instead.
     def observe_position(self, callback: Callable[[float], None]) -> None:
         self._mpv.observe_property("time-pos", lambda name, value: callback(value or 0.0))
+
+    def observe_duration(self, callback: Callable[[float], None]) -> None:
+        self._mpv.observe_property("duration", lambda name, value: callback(value or 0.0))
+
+    def observe_pause(self, callback: Callable[[bool], None]) -> None:
+        self._mpv.observe_property("pause", lambda name, value: callback(bool(value)))
 
     def observe_end_file(self, callback: Callable[[], None]) -> None:
         self._mpv.event_callback("end-file")(lambda event: callback())

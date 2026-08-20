@@ -79,6 +79,40 @@ actually drew into the widget's window. Leave `vo` unset (mpv's default
 macOS's Cocoa backend, and it produces `QWidget::paintEngine: Should no
 longer be called` spam.
 
+A fourth one, more serious than the others: **never call a synchronous mpv
+property getter (`mpv_get_property`, e.g. python-mpv's `.time_pos` /
+`.duration` / `.pause` properties) from the Qt main thread on a recurring
+basis (a `QTimer`, in particular).** Confirmed this deadlocks 100% of the
+time via `sample <pid>` thread dumps: shortly after `load()`, mpv's video
+output does a `dispatch_sync` onto the **main queue** as part of its
+Cocoa/Metal setup (`MacCommon.init`), and mpv's `core` thread blocks
+(`mp_rendezvous`) waiting for that to finish before it'll service anything
+else, including property reads. If the Qt main thread happens to be
+blocked *inside* a synchronous `mpv_get_property` call at that exact
+moment (which a 200ms polling timer firing immediately after `load()`
+essentially guarantees), it can never return to pump Cocoa's run loop —
+which is the only thing that can drain the main-queue dispatch mpv is
+waiting on. Neither side can ever make progress. This produced exactly the
+symptom reported: the app opens, but the beachball (spinning cursor) never
+goes away.
+
+The fix, in `MpvPlayer`/`VideoPanel`: there is no `position`/`duration`
+synchronous getter anymore. Use `observe_position()` /
+`observe_duration()` / `observe_pause()` instead — python-mpv delivers
+these callbacks on its own background event thread (via `mpv_wait_event`,
+a genuinely async mechanism, not the same lock path), and the callbacks do
+nothing but `Signal.emit()` (thread-safe from any thread). The actual
+widget updates happen in slots connected to those signals, which Qt
+automatically queues onto the receiver's own thread (the main thread) when
+the emit comes from a different thread — so no widget code ever runs
+off-thread, and no code ever calls into mpv synchronously from a repeating
+timer. `VideoPanel.position()`/`.duration()` return locally cached values
+kept up to date by those observers, not live mpv reads. If you're tempted
+to add a poll loop back in for anything mpv-related, don't — reproduce the
+deadlock in your head first: does it call a synchronous mpv getter/setter
+from the main thread more than once, without waiting on an async event in
+between? If yes, it can hang exactly like this did.
+
 ## Architecture
 
 ```

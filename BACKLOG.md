@@ -61,6 +61,21 @@ promise of order — just so nothing gets silently lost. Move items to
 
 ## Verification gaps
 
+- [ ] After fixing the polling deadlock, a background-launched instance in
+      the agent's own (non-interactive, no WindowServer session) test shell
+      consistently self-terminated ~15-20s after launch with a clean exit
+      (empty log, no crash) via what a `sample` thread dump showed as
+      processing of an actual window-close event chain
+      (`NSWindow __close` -> Qt's close handling). No code in this repo
+      calls `.close()`/`.quit()` automatically. Given this same shell
+      previously failed to find the app's window via `screencapture` or
+      `System Events` at all (see the earlier verification-gap entry above),
+      this looks like an artifact of testing a GUI app from a detached/
+      headless shell rather than a real bug -- but it wasn't confirmed
+      either way. **If the app closes itself unexpectedly after ~15-20
+      seconds during normal interactive use, report it** so this can be
+      investigated for real instead of dismissed as a test-harness quirk.
+
 - [ ] The agent's shell environment has no attached interactive GUI/display
       session (confirmed: `screencapture` and `System Events` can't see the
       launched process's window), so the actual rendered UI has only been

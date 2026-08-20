@@ -23,6 +23,27 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   sessions). `ProjectDialog` now hides itself while `NewProjectDialog` is
   up.
 
+### Fixed (reported: app opens but the cursor spins forever / never
+finishes loading)
+
+- Root-caused via `sample <pid>` thread dumps to a genuine deadlock:
+  `VideoPanel` polled `MpvPlayer.position`/`.duration` (synchronous
+  `mpv_get_property` calls) from a `QTimer` on the Qt main thread every
+  200ms. On macOS, mpv's video output does a `dispatch_sync` onto the
+  **main queue** during Cocoa/Metal setup shortly after `load()`, and
+  mpv's core thread won't service *any* other request (including property
+  reads) until that finishes. If the main thread is blocked inside one of
+  our polled property reads at that moment, it can never return to pump
+  Cocoa's run loop, which is the only thing that can unblock mpv's
+  main-queue dispatch -- so nothing ever proceeds. A 200ms timer firing
+  right after `load()` hit this every single time.
+  Fixed by replacing the polling entirely with mpv's async property
+  observers (`observe_position`/`observe_duration`/`observe_pause`, which
+  deliver on mpv's own event thread) feeding into Qt signals, which are
+  thread-safe to `.emit()` from any thread and get auto-queued onto the
+  main thread for the actual widget updates. See `CLAUDE.md` for the full
+  writeup.
+
 ### Added
 
 - Project scaffolding: `src/vat` package, `pyproject.toml` (PySide6 +

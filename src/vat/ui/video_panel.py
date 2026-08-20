@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget
 
 from vat.playback.mpv_player import MpvPlayer, VideoSurface
@@ -21,16 +21,28 @@ class VideoPanel(QWidget):
     The MpvPlayer is created lazily on first `load()`, since embedding needs
     a realized native window id (`winId()`), which is only meaningful once
     the widget has actually been shown.
+
+    Position/duration/pause state is driven entirely by MpvPlayer's async
+    property observers, not by polling -- see the long comment in
+    MpvPlayer for why a polling QTimer calling into mpv from the Qt main
+    thread deadlocks on macOS. The observer callbacks fire on mpv's own
+    event thread; they only ever call `.emit()` on the signals below
+    (thread-safe), and the actual widget updates happen in the connected
+    slots, which Qt automatically runs on this widget's own (main) thread
+    since the emit originates from a different thread.
     """
 
     position_changed = Signal(float)
     duration_changed = Signal(float)
+    pause_changed = Signal(bool)
     playback_ended = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._player: MpvPlayer | None = None
+        self._position: float = 0.0
         self._duration: float = 0.0
+        self._is_paused: bool = False
         self._seeking = False
 
         layout = QVBoxLayout(self)
@@ -56,29 +68,31 @@ class VideoPanel(QWidget):
 
         layout.addLayout(controls)
 
-        self._poll_timer = QTimer(self)
-        self._poll_timer.setInterval(200)
-        self._poll_timer.timeout.connect(self._poll_position)
+        self.position_changed.connect(self._handle_position)
+        self.duration_changed.connect(self._handle_duration)
+        self.pause_changed.connect(self._handle_pause)
 
     def _ensure_player(self) -> MpvPlayer:
         if self._player is None:
             self._player = MpvPlayer(self._surface)
+            # These callbacks run on mpv's background event thread -- they
+            # must do nothing but emit(), never touch widgets directly.
+            self._player.observe_position(self.position_changed.emit)
+            self._player.observe_duration(self.duration_changed.emit)
+            self._player.observe_pause(self.pause_changed.emit)
         return self._player
 
     def load(self, path: str) -> None:
         player = self._ensure_player()
         player.load(path)
-        self._poll_timer.start()
-        self._play_btn.setText("Pause")
 
     def toggle_pause(self) -> None:
         if self._player is None:
             return
-        self._player.toggle_pause()
-        self._play_btn.setText("Play" if self._player.is_paused else "Pause")
+        self._player.set_paused(not self._is_paused)
 
     def position(self) -> float:
-        return self._player.position if self._player else 0.0
+        return self._position
 
     def duration(self) -> float:
         return self._duration
@@ -92,7 +106,6 @@ class VideoPanel(QWidget):
             self._player.seek(delta_seconds, relative=True)
 
     def shutdown(self) -> None:
-        self._poll_timer.stop()
         if self._player:
             self._player.shutdown()
             self._player = None
@@ -106,20 +119,17 @@ class VideoPanel(QWidget):
             self.seek_to(fraction * self._duration)
         self._seeking = False
 
-    def _poll_position(self) -> None:
-        if self._player is None:
-            return
-        duration = self._player.duration or 0.0
-        if duration and abs(duration - self._duration) > 0.01:
-            self._duration = duration
-            self.duration_changed.emit(duration)
-
-        position = self._player.position
-        self.position_changed.emit(position)
-
+    def _handle_position(self, value: float) -> None:
+        self._position = value
         if not self._seeking and self._duration > 0:
             self._position_slider.blockSignals(True)
-            self._position_slider.setValue(int((position / self._duration) * 1000))
+            self._position_slider.setValue(int((value / self._duration) * 1000))
             self._position_slider.blockSignals(False)
+        self._time_label.setText(f"{format_time(value)} / {format_time(self._duration)}")
 
-        self._time_label.setText(f"{format_time(position)} / {format_time(self._duration)}")
+    def _handle_duration(self, value: float) -> None:
+        self._duration = value
+
+    def _handle_pause(self, paused: bool) -> None:
+        self._is_paused = paused
+        self._play_btn.setText("Play" if paused else "Pause")

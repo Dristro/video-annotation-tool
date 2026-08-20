@@ -53,6 +53,20 @@ interaction, not a version mismatch. If a future macOS or mpv release fixes
 the root cause, `_mpv_bootstrap.ensure_libmpv_loadable()` becomes a no-op
 automatically (it first checks whether `find_library` already succeeds).
 
+There is a second, separate landmine in the same area: **`QApplication`
+resets `LC_NUMERIC` away from `"C"`** during its own init, undoing the fix
+python-mpv applies at `import mpv` time. libmpv hard-aborts the whole
+process (prints `Non-C locale detected. This is not supported.` to stderr
+and exits — not a catchable Python exception) if `LC_NUMERIC` isn't `"C"`
+when an `MPV()` instance is actually created. Reproduced this for real: the
+app launched fine under `QT_QPA_PLATFORM=offscreen` pytest runs (no
+`QApplication`-driven locale reset had bitten yet because tests never
+construct a real `MpvPlayer`), but hard-crashed on first real run once a
+video was loaded. Fixed by re-asserting
+`locale.setlocale(locale.LC_NUMERIC, "C")` at the top of
+`MpvPlayer.__init__` (`src/vat/playback/mpv_player.py`), right before
+`mpv.MPV(...)` is constructed, rather than relying on import-time ordering.
+
 ## Architecture
 
 ```

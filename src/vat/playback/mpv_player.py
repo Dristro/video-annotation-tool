@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import locale
 from typing import Callable
 
 from vat.playback._mpv_bootstrap import ensure_libmpv_loadable
@@ -32,6 +33,11 @@ class MpvPlayer:
     """
 
     def __init__(self, surface: VideoSurface):
+        # QApplication resets LC_NUMERIC away from "C" during its own init,
+        # undoing python-mpv's import-time fix. libmpv hard-aborts the
+        # process if LC_NUMERIC isn't "C" when the player is created, so
+        # re-assert it right here rather than relying on import order.
+        locale.setlocale(locale.LC_NUMERIC, "C")
         self._mpv = mpv.MPV(
             wid=str(int(surface.winId())),
             vo="libmpv",

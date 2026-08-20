@@ -8,52 +8,135 @@ from vat.playback._mpv_bootstrap import ensure_libmpv_loadable
 ensure_libmpv_loadable()
 
 import mpv  # noqa: E402  (must follow the bootstrap workaround above)
-from PySide6.QtCore import Qt  # noqa: E402
-from PySide6.QtWidgets import QWidget  # noqa: E402
+from PySide6.QtCore import Signal  # noqa: E402
+from PySide6.QtGui import QOpenGLContext  # noqa: E402
+from PySide6.QtOpenGLWidgets import QOpenGLWidget  # noqa: E402
 
 
-class VideoSurface(QWidget):
-    """A bare QWidget whose native window id is handed to mpv for rendering.
+def _get_proc_address(_ctx, name: bytes) -> int:
+    context = QOpenGLContext.currentContext()
+    if context is None:
+        return 0
+    address = context.getProcAddress(name)
+    return int(address) if address else 0
 
-    WA_PaintOnScreen is deliberately NOT set here: Qt's docs call it out as
-    unsupported on macOS's Cocoa backend, and setting it produced exactly
-    the "QWidget::paintEngine: Should no longer be called" warning spam plus
-    a black/non-rendering video surface (Qt's own paint system fighting
-    mpv's native NSView-backed rendering). WA_NativeWindow alone is enough
-    to force a real native window Qt can hand off via winId().
+
+class VideoSurface(QOpenGLWidget):
+    """The widget mpv actually draws into, via its client Render API rather
+    than window (`wid`) embedding.
+
+    `wid`-based embedding -- handing mpv a native window id and letting it
+    manage that window/view directly -- proved unreliable on macOS across
+    two separate real-world attempts: the video kept opening in its own
+    separate OS window regardless of `vo` choice or of timing relative to
+    the parent window being shown, and closing the app hung indefinitely
+    (very likely mpv's Cocoa video output getting stuck in a partial/orphaned
+    embedding state). mpv's macOS video output has only limited support for
+    embedding into a foreign NSView; the Render API -- where mpv renders
+    into an OpenGL framebuffer *we* own, inside a widget *we* fully control,
+    with no window handoff at all -- is the approach macOS-targeting mpv
+    embeddings (e.g. IINA) actually rely on, and sidesteps the whole class
+    of Cocoa window-ownership problems above.
+
+    The render context is created in initializeGL() (called by Qt only once
+    a real, current OpenGL context exists for this widget) rather than
+    eagerly in __init__, since mpv_render_context_create requires a current
+    GL context on the calling thread.
     """
+
+    frame_ready = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
-        self.setAttribute(Qt.WidgetAttribute.WA_DontCreateNativeAncestors, True)
-        self.setAutoFillBackground(False)
+        self._mpv_core: mpv.MPV | None = None
+        self._render_ctx: mpv.MpvRenderContext | None = None
+        # ctypes CFUNCTYPE-wrapped callback, kept alive for as long as the
+        # render context might call it -- ctypes callback trampolines get
+        # garbage-collected like anything else if nothing references them,
+        # which would crash mpv the next time it tried to call a freed
+        # function pointer. Assigning a plain Python function directly (no
+        # explicit CFUNCTYPE wrap) also doesn't work here: unlike passing a
+        # callable as a ctypes *function call* argument, assigning to a
+        # ctypes Structure field typed as a CFUNCTYPE requires an actual
+        # instance of that CFUNCTYPE, not a bare function -- reproduced this
+        # for real (TypeError: expected CFunctionType instance, got
+        # function) before adding the explicit wrap below.
+        self._get_proc_address_cfunc = mpv.MpvGlGetProcAddressFn(_get_proc_address)
+        self.frame_ready.connect(self.update)
+
+    def bind_player(self, mpv_core: mpv.MPV) -> None:
+        self._mpv_core = mpv_core
+        if self.isValid():
+            # A GL context already exists (widget already shown once) --
+            # initializeGL() won't fire again on its own, so set up the
+            # render context here instead.
+            self.makeCurrent()
+            self._create_render_context()
+            self.doneCurrent()
+        else:
+            self.update()  # triggers initializeGL() once the widget is shown
+
+    def release_player(self) -> None:
+        if self._render_ctx is not None:
+            self.makeCurrent()
+            self._render_ctx.free()
+            self.doneCurrent()
+            self._render_ctx = None
+        self._mpv_core = None
+
+    def initializeGL(self) -> None:
+        self._create_render_context()
+
+    def _create_render_context(self) -> None:
+        if self._mpv_core is None or self._render_ctx is not None:
+            return
+        self._render_ctx = mpv.MpvRenderContext(
+            self._mpv_core,
+            "opengl",
+            opengl_init_params={"get_proc_address": self._get_proc_address_cfunc},
+        )
+        # Fires on mpv's own thread whenever a new frame is ready; must do
+        # nothing but emit() (thread-safe from any thread). The connected
+        # `update` slot runs on this widget's own (main) thread since Qt
+        # auto-queues cross-thread signal deliveries.
+        self._render_ctx.update_cb = self.frame_ready.emit
+
+    def paintGL(self) -> None:
+        if self._render_ctx is None:
+            return
+        dpr = self.devicePixelRatioF()
+        self._render_ctx.render(
+            flip_y=True,
+            opengl_fbo={
+                "w": max(1, int(self.width() * dpr)),
+                "h": max(1, int(self.height() * dpr)),
+                "fbo": self.defaultFramebufferObject(),
+            },
+        )
 
 
 class MpvPlayer:
-    """Thin wrapper around python-mpv, bounded to a small on-disk demuxer cache.
+    """Thin wrapper around python-mpv's core client instance, bounded to a
+    small on-disk demuxer cache.
 
     mpv streams from disk rather than loading whole files into memory; we cap
     how far ahead it's allowed to read so playback stays within the project's
     RAM budget even for long videos, per REQUIREMENT.md's non-functional
     requirements (<4GB RAM, chunked loading rather than whole-file loads).
+
+    Deliberately holds no reference to any widget: rendering is VideoSurface's
+    job via the Render API (see its docstring). Callers must pass this
+    instance's `core` to `VideoSurface.bind_player()` to actually see video.
     """
 
-    def __init__(self, surface: VideoSurface):
+    def __init__(self):
         # QApplication resets LC_NUMERIC away from "C" during its own init,
         # undoing python-mpv's import-time fix. libmpv hard-aborts the
         # process if LC_NUMERIC isn't "C" when the player is created, so
         # re-assert it right here rather than relying on import order.
         locale.setlocale(locale.LC_NUMERIC, "C")
         self._mpv = mpv.MPV(
-            wid=str(int(surface.winId())),
-            # Deliberately no `vo=` override: mpv's default ("gpu"/libplacebo)
-            # is what actually supports wid-based window embedding on macOS.
-            # `vo=libmpv` is a *different* thing -- it's the driver used for
-            # the C render API (rendering into an offscreen FBO you manage
-            # yourself), not for embedding via a native window id. Setting it
-            # here made mpv create its own context without ever drawing into
-            # this widget's window: audio/seeking worked, video stayed blank.
+            vo="libmpv",  # required for the Render API: mpv must not manage its own window/view.
             hwdec="auto",
             demuxer_max_bytes="64MiB",
             demuxer_max_back_bytes="16MiB",
@@ -65,6 +148,10 @@ class MpvPlayer:
             input_vo_keyboard=False,
             ytdl=False,
         )
+
+    @property
+    def core(self) -> mpv.MPV:
+        return self._mpv
 
     def load(self, path: str) -> None:
         self._mpv.play(path)

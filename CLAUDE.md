@@ -18,8 +18,10 @@ this file is about how the codebase is organized and how to work in it.
 - **Python 3.11+**, packaged as `src/vat` (import name `vat`, CLI command
   `vat`, entry point `vat.app:main`).
 - **PySide6** (Qt6) for the UI.
-- **python-mpv** (wrapping Homebrew's `libmpv`) for video playback, embedded
-  into a `QWidget` via `winId()`. Chosen over `QtMultimedia`/`Electron`
+- **python-mpv** (wrapping Homebrew's `libmpv`) for video playback, rendered
+  into a `QOpenGLWidget` via mpv's client Render API (see "Video rendering
+  architecture" below — **not** `wid`-based window embedding, which was
+  tried first and abandoned). Chosen over `QtMultimedia`/`Electron`
   specifically for low RAM/CPU footprint and hardware-accelerated decode —
   see the non-functional requirements in `REQUIREMENT.md` (<4GB RAM, "use
   pre-existing tools", DaVinci-Resolve-like feel).
@@ -67,18 +69,6 @@ video was loaded. Fixed by re-asserting
 `MpvPlayer.__init__` (`src/vat/playback/mpv_player.py`), right before
 `mpv.MPV(...)` is constructed, rather than relying on import-time ordering.
 
-A third one, found from an actual run (not reproducible headlessly at all,
-since it only affects whether pixels show up on screen): **don't pass
-`vo="libmpv"` to `mpv.MPV()`**. That VO name is for mpv's *render API*
-(rendering into an FBO you manage yourself), not for `wid`-based window
-embedding — with it set, mpv played audio and responded to seeks
-completely normally while the video frame stayed blank, because it never
-actually drew into the widget's window. Leave `vo` unset (mpv's default
-`gpu`/libplacebo VO is what supports `wid` embedding). Relatedly, don't set
-`WA_PaintOnScreen` on `VideoSurface` — Qt's docs mark it unsupported on
-macOS's Cocoa backend, and it produces `QWidget::paintEngine: Should no
-longer be called` spam.
-
 A fourth one, more serious than the others: **never call a synchronous mpv
 property getter (`mpv_get_property`, e.g. python-mpv's `.time_pos` /
 `.duration` / `.pause` properties) from the Qt main thread on a recurring
@@ -113,21 +103,69 @@ deadlock in your head first: does it call a synchronous mpv getter/setter
 from the main thread more than once, without waiting on an async event in
 between? If yes, it can hang exactly like this did.
 
-A fifth one: **never call `surface.winId()` (i.e. never construct
-`MpvPlayer`) before the top-level window has been shown.** `winId()`
-forces creation of the widget's native view immediately, regardless of
-whether its parent window has ever been shown. If that happens too early,
-mpv can end up attached to a native view that isn't really part of the
-final on-screen window hierarchy yet, and falls back to opening its own
-separate top-level window instead of embedding into ours -- reproduced
-this for real: `MainWindow.__init__` called `refresh_playlist()`
-synchronously, which can auto-select and load the first video before
-`app.py`'s `window.show()` ever runs. Fixed by deferring that first
-`refresh_playlist()` call with `QTimer.singleShot(0, self.refresh_playlist)`
-so it only fires once the Qt event loop is actually running (after
-`.show()`). Any code path that can trigger the first `VideoPanel.load()`
-must run after the window is shown -- don't reintroduce an eager call in
-`__init__`.
+## Video rendering architecture: Render API, not window embedding
+
+**`VideoSurface` is a `QOpenGLWidget`, and mpv renders into it via the
+client Render API (`mpv.MpvRenderContext`) -- mpv is never handed a native
+window/view to manage itself.** This supersedes an earlier `wid`-based
+approach (handing mpv a native window id via `surface.winId()` and letting
+it embed/manage that window directly), which was tried across three
+separate real fix attempts and never worked reliably on macOS:
+
+1. First attempt used `vo="libmpv"` with `wid=...` together -- wrong:
+   `vo=libmpv` is specifically the render-API driver name (only valid
+   *without* `wid`); combined with `wid` it made mpv create its own
+   context without ever drawing into the given window. (Also removed
+   `WA_PaintOnScreen` from `VideoSurface` in this pass -- Qt's docs mark it
+   unsupported on macOS/Cocoa, and it produced `QWidget::paintEngine:
+   Should no longer be called` warning spam.)
+2. Second attempt fixed the `vo` mistake and a timing bug (`winId()` was
+   being forced before the top-level window had ever been shown, via
+   `QTimer.singleShot(0, ...)` deferring the first `refresh_playlist()`
+   call) -- **the video still opened in its own separate OS window, and
+   closing the app hung indefinitely** (most likely mpv's Cocoa video
+   output left in a partial/orphaned embedding state).
+
+Two independent, structurally different fixes to the `wid` approach both
+failed to actually embed the video. mpv's macOS video output has only
+limited support for embedding into a foreign NSView -- well-known macOS mpv
+frontends (e.g. IINA) don't rely on `--wid` embedding either. The Render
+API sidesteps the whole class of Cocoa window-ownership problems: mpv
+never creates or touches any window at all, it just writes decoded frames
+into an OpenGL framebuffer that `VideoSurface` owns and controls,
+inside `paintGL()`.
+
+Mechanics, in `src/vat/playback/mpv_player.py`:
+
+- `MpvPlayer` owns the core `mpv.MPV(vo="libmpv", ...)` client instance
+  (no `wid`). `vo="libmpv"` is *required* here -- it tells mpv not to
+  manage any window/view of its own, which is exactly what makes render-API
+  embedding possible.
+- `VideoSurface` (a `QOpenGLWidget`) is handed that core instance via
+  `bind_player()`, but doesn't create the actual `MpvRenderContext` until
+  `initializeGL()` fires (or immediately if a GL context already exists) --
+  `mpv_render_context_create` requires a *current* OpenGL context on the
+  calling thread, which only reliably exists inside/after Qt's own GL
+  widget initialization, not whenever `bind_player()` happens to be called.
+- The `get_proc_address` callback passed to mpv's OpenGL init params must
+  be explicitly wrapped in `mpv.MpvGlGetProcAddressFn(...)` (a ctypes
+  `CFUNCTYPE`) and that wrapped object kept alive as an instance attribute.
+  Reproduced a real crash from skipping this (`TypeError: expected
+  CFunctionType instance, got function`) -- assigning a plain Python
+  function to a ctypes Structure field typed as a CFUNCTYPE doesn't
+  auto-wrap the way passing one as an ordinary ctypes function-call
+  argument does, and an unwrapped/unreferenced callback would also risk
+  being garbage-collected out from under mpv later.
+- mpv's render-context `update_cb` (fired whenever a new frame is ready)
+  runs on mpv's own thread; it does nothing but `frame_ready.emit()`
+  (thread-safe from any thread), connected to `VideoSurface.update()` --
+  Qt auto-queues that onto the main thread since the emit comes from a
+  different thread. Same pattern as the position/duration/pause observers
+  below -- never touch a widget directly from an mpv callback.
+- Shutdown order matters: free the render context (`VideoSurface.
+  release_player()`) *before* terminating the core mpv client
+  (`MpvPlayer.shutdown()`) -- `VideoPanel.shutdown()` does this in that
+  order.
 
 ## Architecture
 
@@ -204,12 +242,15 @@ python3 -m venv .venv
   `PlaylistPanel`/`MainWindow.refresh_playlist()`** when the videos
   directory is non-empty at `MainWindow` construction time. Row-0
   auto-selection fires `_on_video_selected`, which constructs a real
-  `MpvPlayer` (real `libmpv`) and embeds it into the window's `winId()` --
-  under the offscreen platform this **segfaults the whole test process**
-  (reproduced once; see git history / CHANGELOG). UI controller tests use an
-  *empty* videos directory and poke `MainWindow._current_video_path`
-  directly instead. This is not a hypothetical risk — keep new UI tests
-  consistent with `tests/test_ui_controller.py`.
+  `MpvPlayer` (real `libmpv`) -- under the offscreen platform, the older
+  `wid`-embedding approach **segfaulted the whole test process** this way
+  (reproduced once; see git history / CHANGELOG); the current Render-API
+  `VideoSurface` degrades more gracefully under offscreen (Qt logs
+  `QOpenGLWidget is not supported on this platform` and the render context
+  is simply never created), but still don't rely on that -- UI controller
+  tests use an *empty* videos directory and poke
+  `MainWindow._current_video_path` directly instead, consistent with
+  `tests/test_ui_controller.py`.
 - Core logic (models, project_store, annotation_store, video_scanner,
   Project facade) has no Qt/mpv dependency and is straightforward to test
   directly — prefer adding coverage there over UI-level tests.

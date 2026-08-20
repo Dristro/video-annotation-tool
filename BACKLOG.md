@@ -61,20 +61,26 @@ promise of order — just so nothing gets silently lost. Move items to
 
 ## Verification gaps
 
-- [ ] After fixing the polling deadlock, a background-launched instance in
-      the agent's own (non-interactive, no WindowServer session) test shell
-      consistently self-terminated ~15-20s after launch with a clean exit
-      (empty log, no crash) via what a `sample` thread dump showed as
-      processing of an actual window-close event chain
-      (`NSWindow __close` -> Qt's close handling). No code in this repo
-      calls `.close()`/`.quit()` automatically. Given this same shell
-      previously failed to find the app's window via `screencapture` or
-      `System Events` at all (see the earlier verification-gap entry above),
-      this looks like an artifact of testing a GUI app from a detached/
-      headless shell rather than a real bug -- but it wasn't confirmed
-      either way. **If the app closes itself unexpectedly after ~15-20
-      seconds during normal interactive use, report it** so this can be
-      investigated for real instead of dismissed as a test-harness quirk.
+- [ ] A background-launched instance in the agent's own (non-interactive,
+      no WindowServer session) test shell has now consistently
+      self-terminated ~15-20s after launch with a clean exit (empty log, no
+      crash) across **two structurally different playback implementations**
+      (the old `wid`-embedding approach and the current Render API one) --
+      since the behavior is identical across two very different pieces of
+      code, that's reasonably strong evidence it's an artifact of testing a
+      GUI app from a detached/headless shell with no real WindowServer
+      session, not a bug in either implementation. Still not proven either
+      way. **If the app closes itself unexpectedly after ~15-20 seconds
+      during normal interactive use, report it.**
+- [ ] The Render API rewrite (see `CLAUDE.md`) was verified structurally
+      (compiles, constructs under `QT_QPA_PLATFORM=offscreen` without
+      crashing, and -- critically -- loads and plays a real video for ~10s
+      in a real, non-offscreen launch without the exception/deadlock/hang
+      the two previous `wid`-based attempts hit) but **not** visually --
+      the agent's shell has no attached display, so whether the video
+      actually now renders *inside* the main window (not a separate one)
+      and whether the close (red) button now works have not been confirmed
+      by the agent. Please verify both directly.
 
 - [ ] The agent's shell environment has no attached interactive GUI/display
       session (confirmed: `screencapture` and `System Events` can't see the

@@ -18,9 +18,9 @@ def format_time(seconds: float) -> str:
 class VideoPanel(QWidget):
     """Center panel: the mpv render surface plus transport controls.
 
-    The MpvPlayer is created lazily on first `load()`, since embedding needs
-    a realized native window id (`winId()`), which is only meaningful once
-    the widget has actually been shown.
+    The MpvPlayer (mpv's core client instance) is created lazily on first
+    `load()`. VideoSurface renders it via mpv's Render API rather than
+    window embedding -- see VideoSurface's docstring for why.
 
     Position/duration/pause state is driven entirely by MpvPlayer's async
     property observers, not by polling -- see the long comment in
@@ -79,7 +79,8 @@ class VideoPanel(QWidget):
 
     def _ensure_player(self) -> MpvPlayer:
         if self._player is None:
-            self._player = MpvPlayer(self._surface)
+            self._player = MpvPlayer()
+            self._surface.bind_player(self._player.core)
             # These callbacks run on mpv's background event thread -- they
             # must do nothing but emit(), never touch widgets directly.
             self._player.observe_position(self.position_changed.emit)
@@ -111,6 +112,9 @@ class VideoPanel(QWidget):
             self._player.seek(delta_seconds, relative=True)
 
     def shutdown(self) -> None:
+        # Release the render context (needs the core mpv handle still alive)
+        # before terminating the core itself.
+        self._surface.release_player()
         if self._player:
             self._player.shutdown()
             self._player = None

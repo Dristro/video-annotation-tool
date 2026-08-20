@@ -5,8 +5,29 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### Fixed (reported: video played in a separate OS window; slider only
-seeked on release, not while dragging)
+### Changed (reported: video still opened in a separate window after the
+previous fix; close button didn't work, had to force-quit)
+
+- Replaced `wid`-based window embedding with mpv's client **Render API**
+  for video playback -- a structural change, not another timing tweak.
+  `wid` embedding (handing mpv a native window/view to manage) had failed
+  across two separate real fix attempts (wrong `vo`, then a `winId()`
+  timing issue) -- the video kept opening in its own separate OS window,
+  and closing the app hung indefinitely. mpv's macOS video output has only
+  limited support for embedding into a foreign NSView. The Render API
+  sidesteps this whole class of problem: mpv never owns or touches any
+  window -- `VideoSurface` (now a `QOpenGLWidget`) owns the OpenGL context
+  and framebuffer, and mpv just renders frames into it via
+  `mpv.MpvRenderContext`. Along the way, fixed a real crash from not
+  explicitly wrapping the `get_proc_address` callback in mpv's ctypes
+  `CFUNCTYPE` (`TypeError: expected CFunctionType instance, got
+  function`). Full writeup in `CLAUDE.md` ("Video rendering architecture").
+- `MpvPlayer` no longer takes a `surface` argument; it just owns mpv's
+  core client instance (`.core` property). `VideoSurface.bind_player()` /
+  `.release_player()` manage the render context's lifecycle separately.
+
+### Fixed (video played in a separate OS window; slider only seeked on
+release, not while dragging)
 
 - Video opened in its own separate window instead of embedding into the
   main tool window. Root cause: `MainWindow.__init__` called

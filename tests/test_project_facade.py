@@ -57,3 +57,55 @@ def test_change_videos_dir_updates_playlist(tmp_project_dir, tmp_videos_dir, tmp
     project.set_videos_dir(str(other_dir))
 
     assert [v.rel_path for v in project.list_videos()] == ["only.mp4"]
+
+
+def test_add_cut_with_scores(tmp_project_dir, tmp_videos_dir):
+    project = _make_project(tmp_project_dir, tmp_videos_dir)
+    project.set_scoring_enabled(True)
+    project.add_score_definition("Technique", 0, 100, "float")
+    rel = project.rel_path(project.list_videos()[0].path)
+
+    cut = project.add_cut(rel, 1.0, 2.0, "goal", {"Technique": 87.5})
+
+    assert project.get_entry(rel).cuts[0].scores == {"Technique": 87.5}
+    assert project.is_cut_complete(cut) is True
+    assert project.missing_scores(cut) == []
+
+
+def test_is_cut_complete_when_scoring_disabled(tmp_project_dir, tmp_videos_dir):
+    project = _make_project(tmp_project_dir, tmp_videos_dir)
+    rel = project.rel_path(project.list_videos()[0].path)
+    cut = project.add_cut(rel, 1.0, 2.0, "goal")
+    # Scoring never enabled -- a cut with no scores is still "complete".
+    assert project.is_cut_complete(cut) is True
+
+
+def test_cut_flagged_incomplete_when_score_added_after_the_fact(tmp_project_dir, tmp_videos_dir):
+    project = _make_project(tmp_project_dir, tmp_videos_dir)
+    project.set_scoring_enabled(True)
+    project.add_score_definition("Technique", 0, 100, "float")
+    rel = project.rel_path(project.list_videos()[0].path)
+    cut = project.add_cut(rel, 1.0, 2.0, "goal", {"Technique": 50})
+    assert project.is_cut_complete(cut) is True
+
+    # A new score is added to the project after this cut already exists --
+    # per the chosen design, the old cut is flagged incomplete, not
+    # retroactively blocked or auto-filled.
+    project.add_score_definition("Confidence", 1, 5, "int")
+
+    assert project.is_cut_complete(cut) is False
+    assert project.missing_scores(cut) == ["Confidence"]
+
+
+def test_rename_score_definition_propagates_to_annotation_file(tmp_project_dir, tmp_videos_dir):
+    project = _make_project(tmp_project_dir, tmp_videos_dir)
+    project.set_scoring_enabled(True)
+    project.add_score_definition("Technique", 0, 100, "float")
+    rel = project.rel_path(project.list_videos()[0].path)
+    project.add_cut(rel, 1.0, 2.0, "goal", {"Technique": 87.5})
+
+    project.rename_score_definition("Technique", "Skill")
+
+    assert project.get_entry(rel).cuts[0].scores == {"Skill": 87.5}
+    assert project.config.find_score_definition("Skill") is not None
+    assert project.config.find_score_definition("Technique") is None

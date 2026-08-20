@@ -25,6 +25,20 @@ time.
 8. Project files must be saved to a specified directory that is decided in project
    initialization. Again, this dir must be editable, if changed after project initialized,
    then move all project files to new project-dir.
+9. Scores (optional, per-project): alongside the label for a cut, the user may also record
+   one or more named numeric scores. Scoring is off by default and toggled on/off per
+   project in project settings. When enabled, the project defines a set of named scores
+   (any name the user wants, any number of them), each with its own numeric range and its
+   own dtype (float or int). Range defaults to 0-100, dtype defaults to float, when a new
+   score is defined; both are editable per score, and the score set itself is editable after
+   project creation (add/remove/rename score, same as labels). When scoring is enabled, every
+   defined score is a required field when adding a cut: the input starts empty (no pre-filled
+   value) and a cut cannot be added until every score has a valid, in-range value of the
+   correct dtype. Values outside the defined range must be rejected, not accepted/clamped.
+   Renaming a score updates it across all cuts already recorded with it, same as renaming a
+   label. If a score is added to project settings after cuts already exist, those existing
+   cuts are not retroactively required to have it -- they are simply flagged as incomplete
+   (missing that score) rather than blocked or auto-filled.
 
 
 ## Non-functional requirements
@@ -63,3 +77,19 @@ time.
   remove selected label(s), edit label. Edit label allows changing the label name and shortcut.
   If label name changes, then annotation file must also reflect the updated label name for all annotated
   videos so far.
+
+### Scores:
+* An optional, per-project feature: enabled/disabled as a whole via a project setting.
+* A named numeric field that can be recorded on a cut, alongside its label. A project can define
+  any number of scores, each with its own name, numeric range (min/max), and dtype (float or int).
+* Default range is 0-100 and default dtype is float when a score is first defined; both are then
+  editable per score, same as a label's shortcut is editable.
+* When scoring is enabled, every currently-defined score is a required field on the "add cut" form:
+  it starts with no pre-filled value, and the cut cannot be added until a valid, in-range value of
+  the correct dtype has been entered for every score. Out-of-range or wrong-dtype values must be
+  rejected outright, not silently clamped into range.
+* Editing a score's name updates that key across every cut that already recorded a value under the
+  old name, same as renaming a label updates the label text across existing cuts.
+* Adding a new score after cuts already exist does not retroactively require or block those existing
+  cuts -- they are simply flagged as incomplete (missing that score) so the user can go back and fill
+  it in if they choose to, without anything being enforced.

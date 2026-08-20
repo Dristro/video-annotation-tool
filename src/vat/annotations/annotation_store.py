@@ -73,7 +73,8 @@ class AnnotationStore:
         return cut
 
     def update_cut(self, rel_path: str, cut_id: str, start: float | None = None,
-                    end: float | None = None, label: str | None = None) -> Cut:
+                    end: float | None = None, label: str | None = None,
+                    scores: dict[str, float] | None = None) -> Cut:
         entry = self.videos.get(rel_path)
         if entry is None:
             raise CutNotFoundError(f"No entry for video '{rel_path}'")
@@ -82,7 +83,10 @@ class AnnotationStore:
                 new_start = cut.start if start is None else start
                 new_end = cut.end if end is None else end
                 new_label = cut.label if label is None else label
-                updated = Cut(id=cut.id, start=new_start, end=new_end, label=new_label)
+                # None means "leave scores untouched", not "clear them" --
+                # only replace when a scores dict is explicitly passed.
+                new_scores = dict(cut.scores) if scores is None else dict(scores)
+                updated = Cut(id=cut.id, start=new_start, end=new_end, label=new_label, scores=new_scores)
                 entry.cuts[entry.cuts.index(cut)] = updated
                 self.save()
                 return updated
@@ -105,6 +109,21 @@ class AnnotationStore:
             for cut in entry.cuts:
                 if cut.label == old_name:
                     cut.label = new_name
+                    changed += 1
+        if changed:
+            self.save()
+        return changed
+
+    def rename_score_everywhere(self, old_name: str, new_name: str) -> int:
+        """Rename the `old_name` key to `new_name` in every cut's scores dict.
+
+        Returns the count of cuts changed.
+        """
+        changed = 0
+        for entry in self.videos.values():
+            for cut in entry.cuts:
+                if old_name in cut.scores:
+                    cut.scores[new_name] = cut.scores.pop(old_name)
                     changed += 1
         if changed:
             self.save()

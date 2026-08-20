@@ -22,5 +22,13 @@ class LabelNotFoundError(ProjectError):
     """Raised when referencing a label name that doesn't exist in the project."""
 
 
+class DuplicateScoreDefinitionError(ProjectError):
+    """Raised when adding a score definition whose name already exists in the project."""
+
+
+class ScoreDefinitionNotFoundError(ProjectError):
+    """Raised when referencing a score definition name that doesn't exist in the project."""
+
+
 class CutNotFoundError(ProjectError):
     """Raised when referencing a cut id that doesn't exist for a video."""

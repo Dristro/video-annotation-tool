@@ -6,6 +6,7 @@ from vat.annotations.annotation_store import AnnotationStore
 from vat.media.video_scanner import VideoInfo, list_videos, rel_path_for
 from vat.models.cut import Cut
 from vat.models.label import Label
+from vat.models.score_definition import ScoreDefinition
 from vat.models.video_entry import VideoEntry
 from vat.project.project_store import ProjectStore
 
@@ -61,14 +62,35 @@ class Project:
         self.annotation_store.set_annotated(rel_path, annotated)
 
     # -- Cuts ------------------------------------------------------------
-    def add_cut(self, rel_path: str, start: float, end: float, label: str = "") -> Cut:
-        return self.annotation_store.add_cut(rel_path, Cut(start=start, end=end, label=label))
+    def add_cut(
+        self, rel_path: str, start: float, end: float, label: str = "",
+        scores: dict[str, float] | None = None,
+    ) -> Cut:
+        return self.annotation_store.add_cut(
+            rel_path, Cut(start=start, end=end, label=label, scores=dict(scores or {}))
+        )
 
     def update_cut(self, rel_path: str, cut_id: str, **kwargs) -> Cut:
         return self.annotation_store.update_cut(rel_path, cut_id, **kwargs)
 
     def remove_cut(self, rel_path: str, cut_id: str) -> None:
         self.annotation_store.remove_cut(rel_path, cut_id)
+
+    def is_cut_complete(self, cut: Cut) -> bool:
+        """True unless scoring is enabled and the cut is missing a value for
+        one of the project's *current* score definitions. Cuts created
+        before a score was added, or before scoring was enabled at all,
+        are flagged incomplete rather than silently accepted or blocked --
+        nothing is retroactively enforced, this is purely informational.
+        """
+        if not self.config.scoring_enabled:
+            return True
+        return all(defn.name in cut.scores for defn in self.config.score_definitions)
+
+    def missing_scores(self, cut: Cut) -> list[str]:
+        if not self.config.scoring_enabled:
+            return []
+        return [defn.name for defn in self.config.score_definitions if defn.name not in cut.scores]
 
     # -- Labels ------------------------------------------------------------
     def add_label(self, name: str, shortcut: str = "", description: str = "") -> Label:
@@ -88,3 +110,30 @@ class Project:
         if new_name != old_name:
             self.annotation_store.rename_label_everywhere(old_name, new_name)
         return label
+
+    # -- Score definitions ---------------------------------------------------
+    def set_scoring_enabled(self, enabled: bool) -> None:
+        self.project_store.set_scoring_enabled(enabled)
+
+    def add_score_definition(
+        self, name: str, minimum: float = 0.0, maximum: float = 100.0, dtype: str = "float"
+    ) -> ScoreDefinition:
+        return self.project_store.add_score_definition(name, minimum, maximum, dtype)
+
+    def remove_score_definitions(self, names: list[str]) -> None:
+        self.project_store.remove_score_definitions(names)
+
+    def rename_score_definition(
+        self,
+        old_name: str,
+        new_name: str,
+        new_minimum: float | None = None,
+        new_maximum: float | None = None,
+        new_dtype: str | None = None,
+    ) -> ScoreDefinition:
+        definition = self.project_store.rename_score_definition(
+            old_name, new_name, new_minimum, new_maximum, new_dtype
+        )
+        if new_name != old_name:
+            self.annotation_store.rename_score_everywhere(old_name, new_name)
+        return definition

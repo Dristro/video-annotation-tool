@@ -12,6 +12,7 @@ from vat.project.project import Project
 from vat.ui.inspector_panel import InspectorPanel
 from vat.ui.label_editor_dialog import LabelEditorDialog
 from vat.ui.playlist_panel import PlaylistPanel
+from vat.ui.score_editor_dialog import ScoreEditorDialog
 from vat.ui.timeline_widget import TimelineWidget
 from vat.ui.video_panel import VideoPanel
 
@@ -62,6 +63,9 @@ class MainWindow(QMainWindow):
         self._install_shortcuts()
 
         self.inspector_panel.set_labels(self.project.config.labels)
+        self.inspector_panel.set_score_definitions(
+            self.project.config.scoring_enabled, self.project.config.score_definitions
+        )
         self._register_label_shortcuts()
 
         # Deferred rather than called directly: refresh_playlist() can
@@ -103,6 +107,8 @@ class MainWindow(QMainWindow):
         edit_menu = self.menuBar().addMenu("&Edit")
         edit_labels_action = edit_menu.addAction("Edit Labels…")
         edit_labels_action.triggered.connect(self._on_edit_labels)
+        edit_scores_action = edit_menu.addAction("Edit Scores…")
+        edit_scores_action.triggered.connect(self._on_edit_scores)
 
     # -- Signal wiring ------------------------------------------------------------
     def _wire_signals(self) -> None:
@@ -122,6 +128,7 @@ class MainWindow(QMainWindow):
         self.inspector_panel.seek_to_cut_requested.connect(self._on_seek_to_cut)
         self.inspector_panel.set_annotated_requested.connect(self._on_set_annotated)
         self.inspector_panel.edit_labels_requested.connect(self._on_edit_labels)
+        self.inspector_panel.edit_scores_requested.connect(self._on_edit_scores)
 
     def _install_shortcuts(self) -> None:
         QShortcut(QKeySequence(Qt.Key.Key_Space), self, activated=self.video_panel.toggle_pause)
@@ -173,7 +180,9 @@ class MainWindow(QMainWindow):
         entry = self.project.get_entry(rel)
         cuts = entry.cuts if entry else []
         self.timeline_widget.set_cuts(cuts)
-        self.inspector_panel.set_cuts(cuts)
+        self.inspector_panel.set_cuts(
+            cuts, self.project.config.score_definitions, self.project.config.scoring_enabled
+        )
         self.inspector_panel.set_annotated(
             annotated=bool(entry and entry.annotated),
             has_entry=entry is not None,
@@ -194,7 +203,8 @@ class MainWindow(QMainWindow):
         end = self.inspector_panel.pending_out()
         if start is None or end is None or end <= start:
             return
-        self.project.add_cut(rel, start, end, label)
+        scores = self.inspector_panel.pending_scores()
+        self.project.add_cut(rel, start, end, label, scores)
         self.inspector_panel.clear_pending()
         self._refresh_cuts_and_status(rel)
 
@@ -256,6 +266,15 @@ class MainWindow(QMainWindow):
         if self._current_video_path:
             self._refresh_cuts_and_status(self.project.rel_path(self._current_video_path))
 
+    def _on_edit_scores(self) -> None:
+        dialog = ScoreEditorDialog(self.project, self)
+        dialog.exec()
+        self.inspector_panel.set_score_definitions(
+            self.project.config.scoring_enabled, self.project.config.score_definitions
+        )
+        if self._current_video_path:
+            self._refresh_cuts_and_status(self.project.rel_path(self._current_video_path))
+
     def _on_new_project(self) -> None:
         from vat.ui.project_dialog import NewProjectDialog
 
@@ -279,6 +298,7 @@ class MainWindow(QMainWindow):
         app_settings.save_last_project_dir(project.config.project_dir)
         self.setWindowTitle(f"Video Annotation Tool — {project.config.project_dir}")
         self.inspector_panel.set_labels(project.config.labels)
+        self.inspector_panel.set_score_definitions(project.config.scoring_enabled, project.config.score_definitions)
         self._register_label_shortcuts()
         self._current_video_path = None
         self.refresh_playlist()

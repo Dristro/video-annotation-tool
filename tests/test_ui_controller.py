@@ -74,3 +74,63 @@ def test_mark_annotated_via_controller_updates_playlist(window):
 def test_label_shortcut_registered(window):
     shortcuts = [s.key().toString() for s in window._label_shortcuts]
     assert "G" in shortcuts
+
+
+@pytest.fixture
+def scoring_window(qapp, tmp_project_dir, tmp_path):
+    empty_videos_dir = tmp_path / "videos"
+    empty_videos_dir.mkdir()
+    project = Project.create(tmp_project_dir, str(empty_videos_dir))
+    project.add_label("goal", "g")
+    project.set_scoring_enabled(True)
+    project.add_score_definition("Technique", 0, 100, "float")
+    project.add_score_definition("Confidence", 1, 5, "int")
+    win = MainWindow(project)
+    yield win
+    win.close()
+
+
+def test_score_fields_built_from_project_config(scoring_window):
+    assert set(scoring_window.inspector_panel._score_inputs.keys()) == {"Technique", "Confidence"}
+
+
+def test_add_annotation_blocked_until_scores_valid(scoring_window):
+    win = scoring_window
+    win._current_video_path = os.path.join(win.project.config.videos_dir, "a.mp4")
+    win.inspector_panel.set_pending_in(1.0)
+    win.inspector_panel.set_pending_out(2.0)
+
+    # No scores filled in yet -- must not be addable.
+    assert win.inspector_panel._add_cut_btn.isEnabled() is False
+
+    # Out-of-range value -- still blocked.
+    win.inspector_panel._score_inputs["Technique"].setText("150")
+    win.inspector_panel._score_inputs["Confidence"].setText("3")
+    assert win.inspector_panel._add_cut_btn.isEnabled() is False
+
+    # Valid values -- now addable.
+    win.inspector_panel._score_inputs["Technique"].setText("87.5")
+    assert win.inspector_panel._add_cut_btn.isEnabled() is True
+
+    win._on_add_cut("goal")
+    entry = win.project.get_entry("a.mp4")
+    assert entry.cuts[0].scores == {"Technique": 87.5, "Confidence": 3}
+    # Fields reset after a successful add, ready for the next annotation.
+    assert win.inspector_panel._score_inputs["Technique"].text() == ""
+
+
+def test_cut_flagged_incomplete_after_new_score_added(scoring_window):
+    win = scoring_window
+    win._current_video_path = os.path.join(win.project.config.videos_dir, "a.mp4")
+    win.inspector_panel.set_pending_in(1.0)
+    win.inspector_panel.set_pending_out(2.0)
+    win.inspector_panel._score_inputs["Technique"].setText("50")
+    win.inspector_panel._score_inputs["Confidence"].setText("3")
+    win._on_add_cut("goal")
+
+    win.project.add_score_definition("Difficulty", 0, 10, "float")
+    win._refresh_cuts_and_status("a.mp4")
+
+    cut = win.project.get_entry("a.mp4").cuts[0]
+    assert win.project.is_cut_complete(cut) is False
+    assert win.project.missing_scores(cut) == ["Difficulty"]

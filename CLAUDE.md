@@ -171,12 +171,14 @@ Mechanics, in `src/vat/playback/mpv_player.py`:
 
 ```
 src/vat/
-  models/        Plain dataclasses: Label, Cut, VideoEntry, ProjectConfig.
-                 JSON round-trippable (to_dict/from_dict), no I/O.
+  models/        Plain dataclasses: Label, Cut, ScoreDefinition, VideoEntry,
+                 ProjectConfig. JSON round-trippable (to_dict/from_dict),
+                 no I/O.
   project/       project_store.py: reads/writes the private project.json
-                 (videos_dir, project_dir, labels). project.py: Project
-                 facade combining project_store + annotation_store so
-                 operations spanning both (label rename) stay in sync.
+                 (videos_dir, project_dir, labels, scoring config).
+                 project.py: Project facade combining project_store +
+                 annotation_store so operations spanning both (label/score
+                 rename) stay in sync.
   annotations/   annotation_store.py: reads/writes the public
                  annotations.json (video path -> {annotated, cuts[]}).
   media/         video_scanner.py: flat playlist listing of a videos dir
@@ -184,11 +186,17 @@ src/vat/
   playback/      mpv_player.py (+ _mpv_bootstrap.py) and preloader.py.
   ui/            PySide6 widgets. MainWindow is the controller; every other
                  panel (playlist_panel, video_panel, timeline_widget,
-                 inspector_panel) is a "dumb" widget that only emits Qt
-                 signals and exposes setters -- it does not touch Project
-                 or annotation_store directly. Keep it this way: it's what
-                 makes the controller logic testable without a display
-                 driving real video playback.
+                 inspector_panel) and dialog (label_editor_dialog,
+                 score_editor_dialog, project_dialog) is a "dumb" widget
+                 that only emits Qt signals and exposes setters -- it does
+                 not touch Project or annotation_store directly (dialogs
+                 are a partial exception: they hold a Project reference and
+                 call it directly, same as label_editor_dialog already did,
+                 since they're modal, self-contained CRUD forms rather than
+                 part of the always-visible controller wiring). Keep the
+                 always-visible panels this way: it's what makes the
+                 controller logic testable without a display driving real
+                 video playback.
   app.py         QApplication bootstrap / entry point.
   app_settings.py  Tiny ~/Library/Application Support/vat/settings.json
                  for remembering the last-opened project across launches.
@@ -197,16 +205,53 @@ src/vat/
 ### Two files per project, on purpose
 
 - `project.json` (private): videos_dir, project_dir, the label set
-  (name + shortcut), timestamps. Internal app config.
+  (name + shortcut + description), whether scoring is enabled, and the set
+  of score definitions (name + min/max + dtype). Internal app config.
 - `annotations.json` (**public**, per REQUIREMENT.md #7): video path ->
-  `{annotated: bool, cuts: [{id, start, end, label}]}`. Cuts store the
-  **label name as a plain string**, not a foreign key into project.json's
-  label list. This is deliberate: the annotations file must be readable and
-  meaningful entirely on its own. The tradeoff is that renaming a label
-  requires rewriting every matching cut across the whole annotations file --
-  `Project.rename_label()` does this atomically via
-  `AnnotationStore.rename_label_everywhere()`. Don't switch to id-based
-  label references without revisiting this requirement.
+  `{annotated: bool, cuts: [{id, start, end, label, scores}]}`. Cuts store
+  the **label name as a plain string, and score names as plain dict keys**
+  (`scores: {"Technique": 87.5}`), not foreign keys into project.json's
+  label/score-definition lists. This is deliberate: the annotations file
+  must be readable and meaningful entirely on its own. The tradeoff is that
+  renaming a label or a score requires rewriting every matching cut across
+  the whole annotations file -- `Project.rename_label()` /
+  `Project.rename_score_definition()` do this atomically via
+  `AnnotationStore.rename_label_everywhere()` /
+  `.rename_score_everywhere()`. Don't switch to id-based references without
+  revisiting this requirement.
+
+### Scores (per-cut, optional, per-project)
+
+Per REQUIREMENT.md #9. Design decisions made explicitly with the user
+before implementing (don't re-litigate without checking back):
+
+- **Each score has its own independent range and dtype** (`min`, `max`,
+  `float`/`int`), not one shared range/dtype for the whole project. Same
+  pattern as labels already having independent name/shortcut/description.
+  `models/score_definition.py`: `ScoreDefinition.coerce(raw_text)` is the
+  single source of truth for parsing+range+dtype validation -- both
+  `InspectorPanel`'s live "Add Annotation" validation and
+  `ScoreEditorDialog` should keep going through it rather than
+  reimplementing range checks.
+- **A score field added after cuts already exist is *not* retroactively
+  enforced.** Existing cuts simply won't have that key in their `scores`
+  dict. `Project.is_cut_complete(cut)` / `.missing_scores(cut)` compute
+  completeness on the fly against the project's *current* score
+  definitions (nothing is stored as an "incomplete" flag) -- `InspectorPanel
+  .set_cuts()` uses this to show a "⚠ missing: ..." suffix in the cuts
+  list. Purely informational; nothing blocks or auto-fills old cuts.
+- **When scoring is enabled, every current score is required to add a new
+  cut**, and starts genuinely blank (`QLineEdit` + `QDoubleValidator`, not
+  a spin box defaulting to some numeric value -- spin boxes can't
+  represent "empty"). `InspectorPanel._refresh_add_button_state()` disables
+  "Add Annotation" until every score field parses via `coerce()` without
+  error; the first validation error is shown inline. Fields are cleared
+  back to blank after a successful add (`clear_pending()`), not left
+  showing the last-entered values.
+- The "New Cut"/"Add Cut" UI is unconditionally relabeled "New
+  Annotation"/"Add Annotation" -- this doesn't toggle based on whether
+  *this* project has scoring enabled; a labeled cut is already conceptually
+  an annotation, scores are just an optional enrichment of it.
 
 ### The "annotated" flag is not just "has cuts"
 

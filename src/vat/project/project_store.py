@@ -7,11 +7,14 @@ from pathlib import Path
 from vat.constants import PROJECT_CONFIG_FILENAME
 from vat.models.label import Label
 from vat.models.project_config import ProjectConfig
+from vat.models.score_definition import ScoreDefinition
 from vat.errors import (
     DuplicateLabelError,
+    DuplicateScoreDefinitionError,
     LabelNotFoundError,
     ProjectAlreadyExistsError,
     ProjectNotFoundError,
+    ScoreDefinitionNotFoundError,
 )
 
 
@@ -107,3 +110,49 @@ class ProjectStore:
             label.description = new_description.strip()
         self.save()
         return label
+
+    # -- Score definition management ---------------------------------------
+    def set_scoring_enabled(self, enabled: bool) -> None:
+        self.config.scoring_enabled = enabled
+        self.save()
+
+    def add_score_definition(
+        self, name: str, minimum: float = 0.0, maximum: float = 100.0, dtype: str = "float"
+    ) -> ScoreDefinition:
+        if self.config.find_score_definition(name) is not None:
+            raise DuplicateScoreDefinitionError(f"Score '{name}' already exists")
+        definition = ScoreDefinition(name=name, minimum=minimum, maximum=maximum, dtype=dtype)
+        self.config.score_definitions.append(definition)
+        self.save()
+        return definition
+
+    def remove_score_definitions(self, names: list[str]) -> None:
+        name_set = set(names)
+        self.config.score_definitions = [d for d in self.config.score_definitions if d.name not in name_set]
+        self.save()
+
+    def rename_score_definition(
+        self,
+        old_name: str,
+        new_name: str,
+        new_minimum: float | None = None,
+        new_maximum: float | None = None,
+        new_dtype: str | None = None,
+    ) -> ScoreDefinition:
+        definition = self.config.find_score_definition(old_name)
+        if definition is None:
+            raise ScoreDefinitionNotFoundError(f"Score '{old_name}' not found")
+        new_name = new_name.strip()
+        if new_name != old_name and self.config.find_score_definition(new_name) is not None:
+            raise DuplicateScoreDefinitionError(f"Score '{new_name}' already exists")
+        minimum = definition.minimum if new_minimum is None else float(new_minimum)
+        maximum = definition.maximum if new_maximum is None else float(new_maximum)
+        dtype = definition.dtype if new_dtype is None else new_dtype
+        # Rebuild via the constructor so the same validation as creation
+        # applies (min < max, whole numbers for 'int', etc.) rather than
+        # allowing an invalid combination to be assigned field-by-field.
+        updated = ScoreDefinition(name=new_name, minimum=minimum, maximum=maximum, dtype=dtype)
+        index = self.config.score_definitions.index(definition)
+        self.config.score_definitions[index] = updated
+        self.save()
+        return updated

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
+from PySide6.QtGui import QDoubleValidator
 from PySide6.QtWidgets import (
     QComboBox,
+    QFormLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QPushButton,
@@ -15,12 +18,14 @@ from PySide6.QtWidgets import (
 
 from vat.models.cut import Cut
 from vat.models.label import Label
+from vat.models.score_definition import ScoreDefinition
 from vat.ui.video_panel import format_time
 
 
 class InspectorPanel(QWidget):
-    """Right-hand panel: mark in/out, assign a label, manage cuts for the
-    current video, and confirm the video as annotated.
+    """Right-hand panel: mark in/out, assign a label (+ scores, if the
+    project has scoring enabled), manage cuts for the current video, and
+    confirm the video as annotated.
 
     Pure view + signals; MainWindow owns all Project/annotation mutations.
     """
@@ -32,12 +37,16 @@ class InspectorPanel(QWidget):
     seek_to_cut_requested = Signal(str)  # cut id
     set_annotated_requested = Signal(bool)
     edit_labels_requested = Signal()
+    edit_scores_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._pending_in: float | None = None
         self._pending_out: float | None = None
         self._cuts_by_row: list[str] = []
+        self._score_definitions: list[ScoreDefinition] = []
+        self._score_inputs: dict[str, QLineEdit] = {}
+        self._scoring_enabled = False
 
         layout = QVBoxLayout(self)
 
@@ -45,8 +54,8 @@ class InspectorPanel(QWidget):
         self._video_name_label.setWordWrap(True)
         layout.addWidget(self._video_name_label)
 
-        mark_group = QGroupBox("New Cut")
-        mark_layout = QVBoxLayout(mark_group)
+        self._mark_group = QGroupBox("New Annotation")
+        mark_layout = QVBoxLayout(self._mark_group)
 
         in_out_row = QHBoxLayout()
         self._mark_in_btn = QPushButton("Mark In (I)")
@@ -68,12 +77,27 @@ class InspectorPanel(QWidget):
         label_row.addWidget(edit_labels_btn)
         mark_layout.addLayout(label_row)
 
-        self._add_cut_btn = QPushButton("Add Cut")
+        # Score input rows are built/torn down dynamically by
+        # set_score_definitions() based on the project's current config --
+        # this form layout is the container they get inserted into.
+        self._scores_form = QFormLayout()
+        mark_layout.addLayout(self._scores_form)
+
+        self._score_error_label = QLabel("")
+        self._score_error_label.setWordWrap(True)
+        self._score_error_label.setStyleSheet("color: #b00020;")
+        mark_layout.addWidget(self._score_error_label)
+
+        edit_scores_btn = QPushButton("Edit Scores…")
+        edit_scores_btn.clicked.connect(self.edit_scores_requested)
+        mark_layout.addWidget(edit_scores_btn)
+
+        self._add_cut_btn = QPushButton("Add Annotation")
         self._add_cut_btn.setEnabled(False)
         self._add_cut_btn.clicked.connect(self._emit_add_cut)
         mark_layout.addWidget(self._add_cut_btn)
 
-        layout.addWidget(mark_group)
+        layout.addWidget(self._mark_group)
 
         cuts_group = QGroupBox("Cuts")
         cuts_layout = QVBoxLayout(cuts_group)
@@ -125,6 +149,48 @@ class InspectorPanel(QWidget):
         if idx >= 0:
             self._label_combo.setCurrentIndex(idx)
 
+    def set_score_definitions(self, scoring_enabled: bool, definitions: list[ScoreDefinition]) -> None:
+        """(Re)build the dynamic score input rows. Called on load, on
+        project switch, and whenever score definitions are edited -- the
+        set of fields (and their ranges/dtypes) can change at any time.
+        """
+        self._scoring_enabled = scoring_enabled
+        self._score_definitions = list(definitions)
+
+        while self._scores_form.rowCount():
+            self._scores_form.removeRow(0)
+        self._score_inputs.clear()
+
+        if scoring_enabled:
+            for defn in self._score_definitions:
+                edit = QLineEdit()
+                edit.setPlaceholderText(f"{defn.minimum:g}–{defn.maximum:g}")
+                validator = QDoubleValidator(defn.minimum, defn.maximum, 6, edit)
+                validator.setNotation(QDoubleValidator.Notation.StandardNotation)
+                edit.setValidator(validator)
+                edit.textChanged.connect(self._refresh_add_button_state)
+                self._scores_form.addRow(f"{defn.name}:", edit)
+                self._score_inputs[defn.name] = edit
+
+        self._refresh_add_button_state()
+
+    def pending_scores(self) -> dict[str, float]:
+        """Coerced, validated score values. Only meaningful when the Add
+        Annotation button is enabled -- invalid/empty fields are simply
+        omitted rather than raising, since MainWindow only calls this from
+        the button's own click handler.
+        """
+        result: dict[str, float] = {}
+        for defn in self._score_definitions:
+            edit = self._score_inputs.get(defn.name)
+            if edit is None:
+                continue
+            try:
+                result[defn.name] = defn.coerce(edit.text())
+            except ValueError:
+                continue
+        return result
+
     def set_pending_in(self, seconds: float | None) -> None:
         self._pending_in = seconds
         self._refresh_pending_label()
@@ -142,25 +208,52 @@ class InspectorPanel(QWidget):
     def clear_pending(self) -> None:
         self._pending_in = None
         self._pending_out = None
+        for edit in self._score_inputs.values():
+            edit.clear()
         self._refresh_pending_label()
 
     def _refresh_pending_label(self) -> None:
         in_text = format_time(self._pending_in) if self._pending_in is not None else "--"
         out_text = format_time(self._pending_out) if self._pending_out is not None else "--"
         self._pending_label.setText(f"In: {in_text} / Out: {out_text}")
-        valid = (
+        self._refresh_add_button_state()
+
+    def _refresh_add_button_state(self) -> None:
+        in_out_valid = (
             self._pending_in is not None
             and self._pending_out is not None
             and self._pending_out > self._pending_in
         )
-        self._add_cut_btn.setEnabled(valid)
+        scores_valid = True
+        error = ""
+        if self._scoring_enabled:
+            for defn in self._score_definitions:
+                edit = self._score_inputs.get(defn.name)
+                if edit is None:
+                    continue
+                try:
+                    defn.coerce(edit.text())
+                except ValueError as exc:
+                    scores_valid = False
+                    if not error:
+                        error = str(exc)
+        self._score_error_label.setText(error)
+        self._add_cut_btn.setEnabled(in_out_valid and scores_valid)
 
-    def set_cuts(self, cuts: list[Cut]) -> None:
+    def set_cuts(self, cuts: list[Cut], score_definitions: list[ScoreDefinition], scoring_enabled: bool) -> None:
         self._cuts_list.clear()
         self._cuts_by_row = []
         for cut in cuts:
             label_part = f" [{cut.label}]" if cut.label else ""
-            item = QListWidgetItem(f"{format_time(cut.start)} – {format_time(cut.end)}{label_part}")
+            scores_part = ""
+            if cut.scores:
+                scores_part = "  " + ", ".join(f"{name}={value:g}" for name, value in cut.scores.items())
+            missing = (
+                [d.name for d in score_definitions if d.name not in cut.scores] if scoring_enabled else []
+            )
+            incomplete_part = f"  ⚠ missing: {', '.join(missing)}" if missing else ""
+            text = f"{format_time(cut.start)} – {format_time(cut.end)}{label_part}{scores_part}{incomplete_part}"
+            item = QListWidgetItem(text)
             self._cuts_list.addItem(item)
             self._cuts_by_row.append(cut.id)
 

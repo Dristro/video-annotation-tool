@@ -31,6 +31,21 @@ promise of order — just so nothing gets silently lost. Move items to
 - [ ] "Recent projects" list (currently only remembers the single
       last-opened project).
 
+## Scores follow-ups
+
+- [ ] `NewProjectDialog` (the project-creation wizard) only lets you set
+      initial labels, not initial score definitions or enable scoring --
+      scoring can only be configured *after* creating the project, via
+      **Edit > Edit Scores…**. Fully functional, just an inconsistency
+      with how labels are handled at creation time.
+- [ ] Score values aren't shown anywhere on the timeline visualization
+      (only in the inspector's cuts list text, e.g. "Technique=87.5,
+      Confidence=4"). Could add as a tooltip on hover.
+- [ ] "Edit Scores…" and "Edit Labels…" are separate dialogs/menu items;
+      no single "Project Settings" dialog exists yet as project-level
+      config surfaces grow (videos dir, project dir, labels, scoring are
+      all in different menu entries right now).
+
 ## Correctness / robustness
 
 - [ ] Detect and warn on duplicate label shortcut keys (currently the last

@@ -5,6 +5,37 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added: per-cut scores (REQUIREMENT.md #9)
+
+- New optional, per-project feature: alongside a cut's label, the user can
+  now record one or more named numeric scores. Off by default; toggled
+  per project in **Edit > Edit Scores…**.
+- Each score has its own independent name, range (min/max), and dtype
+  (float or int) -- new score fields default to 0-100/float, both editable
+  per score. `ScoreEditorDialog` manages the set (add/remove/rename,
+  mirroring `LabelEditorDialog`); renaming a score propagates into every
+  cut that already recorded a value under the old name
+  (`AnnotationStore.rename_score_everywhere`).
+- When scoring is enabled, the right-hand panel's "New Cut" group is now
+  "New Annotation": every currently-defined score becomes a required,
+  genuinely blank input (no pre-filled value) next to the label picker.
+  Out-of-range or wrong-dtype values are rejected outright (validated via
+  `ScoreDefinition.coerce()`); "Add Annotation" stays disabled with an
+  inline error until every field is valid.
+- A score added to project settings after cuts already exist is **not**
+  retroactively required -- existing cuts simply don't have that key.
+  `Project.is_cut_complete()`/`.missing_scores()` compute this on the fly,
+  and the cuts list shows a "⚠ missing: ..." marker for affected cuts, per
+  the user's explicit choice to flag rather than block or silently accept.
+- `Cut` gained a `scores: dict[str, float]` field; `ProjectConfig` gained
+  `scoring_enabled` and `score_definitions`. New model:
+  `models/score_definition.py`.
+- 42 new tests (87 total) covering `ScoreDefinition` validation/coercion,
+  the full CRUD + rename-propagation path through `project_store` and the
+  `Project` facade, `annotation_store.rename_score_everywhere`, and the
+  InspectorPanel validation/incomplete-flagging flow through
+  `MainWindow`.
+
 ### Changed (reported: video still opened in a separate window after the
 previous fix; close button didn't work, had to force-quit)
 

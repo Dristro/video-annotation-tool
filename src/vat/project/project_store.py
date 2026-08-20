@@ -117,11 +117,12 @@ class ProjectStore:
         self.save()
 
     def add_score_definition(
-        self, name: str, minimum: float = 0.0, maximum: float = 100.0, dtype: str = "float"
+        self, name: str, minimum: float = 0.0, maximum: float = 100.0, dtype: str = "float",
+        description: str = "",
     ) -> ScoreDefinition:
         if self.config.find_score_definition(name) is not None:
             raise DuplicateScoreDefinitionError(f"Score '{name}' already exists")
-        definition = ScoreDefinition(name=name, minimum=minimum, maximum=maximum, dtype=dtype)
+        definition = ScoreDefinition(name=name, minimum=minimum, maximum=maximum, dtype=dtype, description=description)
         self.config.score_definitions.append(definition)
         self.save()
         return definition
@@ -138,6 +139,7 @@ class ProjectStore:
         new_minimum: float | None = None,
         new_maximum: float | None = None,
         new_dtype: str | None = None,
+        new_description: str | None = None,
     ) -> ScoreDefinition:
         definition = self.config.find_score_definition(old_name)
         if definition is None:
@@ -148,10 +150,11 @@ class ProjectStore:
         minimum = definition.minimum if new_minimum is None else float(new_minimum)
         maximum = definition.maximum if new_maximum is None else float(new_maximum)
         dtype = definition.dtype if new_dtype is None else new_dtype
+        description = definition.description if new_description is None else new_description
         # Rebuild via the constructor so the same validation as creation
         # applies (min < max, whole numbers for 'int', etc.) rather than
         # allowing an invalid combination to be assigned field-by-field.
-        updated = ScoreDefinition(name=new_name, minimum=minimum, maximum=maximum, dtype=dtype)
+        updated = ScoreDefinition(name=new_name, minimum=minimum, maximum=maximum, dtype=dtype, description=description)
         index = self.config.score_definitions.index(definition)
         self.config.score_definitions[index] = updated
         self.save()

@@ -116,9 +116,10 @@ class Project:
         self.project_store.set_scoring_enabled(enabled)
 
     def add_score_definition(
-        self, name: str, minimum: float = 0.0, maximum: float = 100.0, dtype: str = "float"
+        self, name: str, minimum: float = 0.0, maximum: float = 100.0, dtype: str = "float",
+        description: str = "",
     ) -> ScoreDefinition:
-        return self.project_store.add_score_definition(name, minimum, maximum, dtype)
+        return self.project_store.add_score_definition(name, minimum, maximum, dtype, description)
 
     def remove_score_definitions(self, names: list[str]) -> None:
         self.project_store.remove_score_definitions(names)
@@ -130,9 +131,10 @@ class Project:
         new_minimum: float | None = None,
         new_maximum: float | None = None,
         new_dtype: str | None = None,
+        new_description: str | None = None,
     ) -> ScoreDefinition:
         definition = self.project_store.rename_score_definition(
-            old_name, new_name, new_minimum, new_maximum, new_dtype
+            old_name, new_name, new_minimum, new_maximum, new_dtype, new_description
         )
         if new_name != old_name:
             self.annotation_store.rename_score_everywhere(old_name, new_name)

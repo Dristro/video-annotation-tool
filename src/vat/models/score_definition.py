@@ -13,13 +13,16 @@ class ScoreDefinition:
     label (e.g. "Technique": 0-100 float, "Confidence": 1-5 int).
 
     Each score has its own independent range and dtype, entirely separate
-    from every other score defined in the project.
+    from every other score defined in the project. The optional description
+    is shown in the score editor (and as a tooltip where the value is
+    entered) so the user can see what a score means.
     """
 
     name: str
     minimum: float = 0.0
     maximum: float = 100.0
     dtype: str = DTYPE_FLOAT
+    description: str = ""
 
     def __post_init__(self) -> None:
         self.name = self.name.strip()
@@ -33,6 +36,7 @@ class ScoreDefinition:
             raise ValueError("minimum must be less than maximum")
         if self.dtype == DTYPE_INT and (not self.minimum.is_integer() or not self.maximum.is_integer()):
             raise ValueError("minimum/maximum must be whole numbers when dtype is 'int'")
+        self.description = self.description.strip()
 
     def coerce(self, raw: str) -> float | int:
         """Parse and range-check a raw text value. Raises ValueError if the
@@ -60,6 +64,7 @@ class ScoreDefinition:
             "minimum": self.minimum,
             "maximum": self.maximum,
             "dtype": self.dtype,
+            "description": self.description,
         }
 
     @classmethod
@@ -69,4 +74,5 @@ class ScoreDefinition:
             minimum=data.get("minimum", 0.0),
             maximum=data.get("maximum", 100.0),
             dtype=data.get("dtype", DTYPE_FLOAT),
+            description=data.get("description", ""),
         )

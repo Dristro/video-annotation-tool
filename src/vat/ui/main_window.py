@@ -124,11 +124,11 @@ class MainWindow(QMainWindow):
         self.inspector_panel.mark_in_requested.connect(self._on_mark_in)
         self.inspector_panel.mark_out_requested.connect(self._on_mark_out)
         self.inspector_panel.add_cut_requested.connect(self._on_add_cut)
+        self.inspector_panel.edit_cut_requested.connect(self._on_edit_cut)
         self.inspector_panel.delete_cut_requested.connect(self._on_delete_cut)
         self.inspector_panel.seek_to_cut_requested.connect(self._on_seek_to_cut)
         self.inspector_panel.set_annotated_requested.connect(self._on_set_annotated)
         self.inspector_panel.edit_labels_requested.connect(self._on_edit_labels)
-        self.inspector_panel.edit_scores_requested.connect(self._on_edit_scores)
 
     def _install_shortcuts(self) -> None:
         QShortcut(QKeySequence(Qt.Key.Key_Space), self, activated=self.video_panel.toggle_pause)
@@ -207,6 +207,20 @@ class MainWindow(QMainWindow):
         self.project.add_cut(rel, start, end, label, scores)
         self.inspector_panel.clear_pending()
         self._refresh_cuts_and_status(rel)
+
+    def _on_edit_cut(self, label: str) -> None:
+        if self._current_video_path is None:
+            return
+        cut_id = self.inspector_panel.selected_cut_id()
+        if cut_id is None:
+            return
+        rel = self.project.rel_path(self._current_video_path)
+        scores = self.inspector_panel.pending_scores()
+        self.project.update_cut(rel, cut_id, label=label, scores=scores)
+        self._refresh_cuts_and_status(rel)
+        # Re-select the same cut so the panel visibly reflects the saved
+        # values rather than losing selection when the list rebuilds.
+        self.inspector_panel.select_cut_by_id(cut_id)
 
     def _on_delete_cut(self, cut_id: str) -> None:
         if self._current_video_path is None:

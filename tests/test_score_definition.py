@@ -34,6 +34,15 @@ class TestScoreDefinitionValidation:
         restored = ScoreDefinition.from_dict(defn.to_dict())
         assert restored == defn
 
+    def test_description_defaults_empty_and_strips(self):
+        assert ScoreDefinition(name="x").description == ""
+        assert ScoreDefinition(name="x", description="  how clean?  ").description == "how clean?"
+
+    def test_description_round_trip(self):
+        defn = ScoreDefinition(name="Technique", description="How clean was the execution?")
+        restored = ScoreDefinition.from_dict(defn.to_dict())
+        assert restored.description == "How clean was the execution?"
+
 
 class TestScoreDefinitionCoerce:
     def test_valid_float_in_range(self):

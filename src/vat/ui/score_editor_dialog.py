@@ -23,15 +23,16 @@ from vat.errors import DuplicateScoreDefinitionError, ScoreDefinitionNotFoundErr
 from vat.models.score_definition import DTYPE_FLOAT, DTYPE_INT, VALID_DTYPES
 from vat.project.project import Project
 
-_COLUMNS = ["Name", "Min", "Max", "Type"]
+_COLUMNS = ["Name", "Description", "Min", "Max", "Type"]
 _SPIN_RANGE = 1_000_000_000
 
 
 class _ScoreFormDialog(QDialog):
-    """Add/edit form for a single score definition: name, range, dtype."""
+    """Add/edit form for a single score definition: name, description, range, dtype."""
 
     def __init__(
-        self, parent=None, name: str = "", minimum: float = 0.0, maximum: float = 100.0, dtype: str = DTYPE_FLOAT
+        self, parent=None, name: str = "", description: str = "",
+        minimum: float = 0.0, maximum: float = 100.0, dtype: str = DTYPE_FLOAT,
     ):
         super().__init__(parent)
         self.setWindowTitle("Score")
@@ -40,6 +41,10 @@ class _ScoreFormDialog(QDialog):
 
         self._name_edit = QLineEdit(name)
         form.addRow("Name:", self._name_edit)
+
+        self._description_edit = QLineEdit(description)
+        self._description_edit.setPlaceholderText("What does this score mean?")
+        form.addRow("Description:", self._description_edit)
 
         self._min_spin = QDoubleSpinBox()
         self._min_spin.setRange(-_SPIN_RANGE, _SPIN_RANGE)
@@ -75,9 +80,10 @@ class _ScoreFormDialog(QDialog):
         self._min_spin.setDecimals(decimals)
         self._max_spin.setDecimals(decimals)
 
-    def values(self) -> tuple[str, float, float, str]:
+    def values(self) -> tuple[str, str, float, float, str]:
         return (
             self._name_edit.text().strip(),
+            self._description_edit.text().strip(),
             self._min_spin.value(),
             self._max_spin.value(),
             self._dtype_combo.currentText(),
@@ -96,7 +102,7 @@ class ScoreEditorDialog(QDialog):
         super().__init__(parent)
         self._project = project
         self.setWindowTitle("Edit Scores")
-        self.resize(460, 360)
+        self.resize(560, 360)
 
         layout = QVBoxLayout(self)
 
@@ -111,10 +117,11 @@ class ScoreEditorDialog(QDialog):
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.verticalHeader().setVisible(False)
         header = self._table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         self._table.doubleClicked.connect(self._on_edit)
         layout.addWidget(self._table)
 
@@ -147,9 +154,10 @@ class ScoreEditorDialog(QDialog):
             name_item = QTableWidgetItem(defn.name)
             name_item.setData(Qt.ItemDataRole.UserRole, defn.name)
             self._table.setItem(row, 0, name_item)
-            self._table.setItem(row, 1, QTableWidgetItem(f"{defn.minimum:g}"))
-            self._table.setItem(row, 2, QTableWidgetItem(f"{defn.maximum:g}"))
-            self._table.setItem(row, 3, QTableWidgetItem(defn.dtype))
+            self._table.setItem(row, 1, QTableWidgetItem(defn.description))
+            self._table.setItem(row, 2, QTableWidgetItem(f"{defn.minimum:g}"))
+            self._table.setItem(row, 3, QTableWidgetItem(f"{defn.maximum:g}"))
+            self._table.setItem(row, 4, QTableWidgetItem(defn.dtype))
 
     def _selected_names(self) -> list[str]:
         rows = {index.row() for index in self._table.selectedIndexes()}
@@ -163,11 +171,11 @@ class ScoreEditorDialog(QDialog):
     def _on_add(self) -> None:
         dialog = _ScoreFormDialog(self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            name, minimum, maximum, dtype = dialog.values()
+            name, description, minimum, maximum, dtype = dialog.values()
             if not name:
                 return
             try:
-                self._project.add_score_definition(name, minimum, maximum, dtype)
+                self._project.add_score_definition(name, minimum, maximum, dtype, description)
             except (DuplicateScoreDefinitionError, ValueError) as exc:
                 QMessageBox.warning(self, "Cannot Add Score", str(exc))
                 return
@@ -182,14 +190,15 @@ class ScoreEditorDialog(QDialog):
         if definition is None:
             return
         dialog = _ScoreFormDialog(
-            self, name=definition.name, minimum=definition.minimum, maximum=definition.maximum, dtype=definition.dtype
+            self, name=definition.name, description=definition.description,
+            minimum=definition.minimum, maximum=definition.maximum, dtype=definition.dtype,
         )
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            new_name, minimum, maximum, dtype = dialog.values()
+            new_name, new_description, minimum, maximum, dtype = dialog.values()
             if not new_name:
                 return
             try:
-                self._project.rename_score_definition(old_name, new_name, minimum, maximum, dtype)
+                self._project.rename_score_definition(old_name, new_name, minimum, maximum, dtype, new_description)
             except (DuplicateScoreDefinitionError, ScoreDefinitionNotFoundError, ValueError) as exc:
                 QMessageBox.warning(self, "Cannot Edit Score", str(exc))
                 return

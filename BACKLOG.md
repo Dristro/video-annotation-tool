@@ -45,6 +45,11 @@ promise of order — just so nothing gets silently lost. Move items to
       no single "Project Settings" dialog exists yet as project-level
       config surfaces grow (videos dir, project dir, labels, scoring are
       all in different menu entries right now).
+- [ ] Editing an existing annotation only covers label + scores; the
+      start/end time can't be adjusted after the cut is created (only via
+      delete + re-add). Deliberately out of scope for the edit-annotation
+      feature as requested (focused on filling in/correcting scores), but
+      worth revisiting if re-timing existing cuts turns out to matter.
 
 ## Correctness / robustness
 

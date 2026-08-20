@@ -176,3 +176,16 @@ def test_scoring_persists_across_reload(tmp_project_dir, tmp_videos_dir):
     store.add_score_definition("Technique", 0, 100, "float")
     reloaded = ProjectStore.load(tmp_project_dir)
     assert reloaded.config.score_definition_names() == ["Technique"]
+
+
+def test_add_score_definition_with_description(tmp_project_dir, tmp_videos_dir):
+    store = ProjectStore.create(tmp_project_dir, tmp_videos_dir)
+    store.add_score_definition("Technique", 0, 100, "float", description="How clean was it?")
+    assert store.config.find_score_definition("Technique").description == "How clean was it?"
+
+
+def test_rename_score_definition_updates_description(tmp_project_dir, tmp_videos_dir):
+    store = ProjectStore.create(tmp_project_dir, tmp_videos_dir)
+    store.add_score_definition("Technique", description="old description")
+    store.rename_score_definition("Technique", "Technique", new_description="new description")
+    assert store.config.find_score_definition("Technique").description == "new description"

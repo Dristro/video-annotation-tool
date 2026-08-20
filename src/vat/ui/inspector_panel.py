@@ -27,23 +27,29 @@ class InspectorPanel(QWidget):
     project has scoring enabled), manage cuts for the current video, and
     confirm the video as annotated.
 
+    Selecting a cut -- by clicking it on the timeline or in the cuts list
+    below -- loads its label and scores into the same input fields used to
+    add a new one, and enables "Edit Annotation". This is how an existing
+    annotation (e.g. one missing a score that was added to the project
+    later) gets filled in or corrected, rather than deleted and re-added.
+
     Pure view + signals; MainWindow owns all Project/annotation mutations.
     """
 
     mark_in_requested = Signal()
     mark_out_requested = Signal()
     add_cut_requested = Signal(str)  # label name
+    edit_cut_requested = Signal(str)  # label name (operates on selected_cut_id())
     delete_cut_requested = Signal(str)  # cut id
     seek_to_cut_requested = Signal(str)  # cut id
     set_annotated_requested = Signal(bool)
     edit_labels_requested = Signal()
-    edit_scores_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._pending_in: float | None = None
         self._pending_out: float | None = None
-        self._cuts_by_row: list[str] = []
+        self._cuts_by_row: list[Cut] = []
         self._score_definitions: list[ScoreDefinition] = []
         self._score_inputs: dict[str, QLineEdit] = {}
         self._scoring_enabled = False
@@ -79,7 +85,10 @@ class InspectorPanel(QWidget):
 
         # Score input rows are built/torn down dynamically by
         # set_score_definitions() based on the project's current config --
-        # this form layout is the container they get inserted into.
+        # this form layout is the container they get inserted into. Score
+        # settings themselves are only reachable via Edit > Edit Scores… now
+        # (no button here) to keep this panel focused on the current
+        # annotation rather than project-level configuration.
         self._scores_form = QFormLayout()
         mark_layout.addLayout(self._scores_form)
 
@@ -88,14 +97,19 @@ class InspectorPanel(QWidget):
         self._score_error_label.setStyleSheet("color: #b00020;")
         mark_layout.addWidget(self._score_error_label)
 
-        edit_scores_btn = QPushButton("Edit Scores…")
-        edit_scores_btn.clicked.connect(self.edit_scores_requested)
-        mark_layout.addWidget(edit_scores_btn)
-
+        # Edit sits to the inside (left), Add to the outside (right) --
+        # edit acts on whatever cut is currently selected in the list/
+        # timeline; add always creates a new one from Mark In/Out.
+        action_row = QHBoxLayout()
+        self._edit_cut_btn = QPushButton("Edit Annotation")
+        self._edit_cut_btn.setEnabled(False)
+        self._edit_cut_btn.clicked.connect(self._emit_edit_cut)
+        action_row.addWidget(self._edit_cut_btn)
         self._add_cut_btn = QPushButton("Add Annotation")
         self._add_cut_btn.setEnabled(False)
         self._add_cut_btn.clicked.connect(self._emit_add_cut)
-        mark_layout.addWidget(self._add_cut_btn)
+        action_row.addWidget(self._add_cut_btn)
+        mark_layout.addLayout(action_row)
 
         layout.addWidget(self._mark_group)
 
@@ -103,6 +117,7 @@ class InspectorPanel(QWidget):
         cuts_layout = QVBoxLayout(cuts_group)
         self._cuts_list = QListWidget()
         self._cuts_list.itemDoubleClicked.connect(self._on_cut_double_clicked)
+        self._cuts_list.currentRowChanged.connect(self._on_cut_selection_changed)
         cuts_layout.addWidget(self._cuts_list)
         delete_cut_btn = QPushButton("Delete Selected Cut")
         delete_cut_btn.clicked.connect(self._emit_delete_cut)
@@ -165,20 +180,23 @@ class InspectorPanel(QWidget):
             for defn in self._score_definitions:
                 edit = QLineEdit()
                 edit.setPlaceholderText(f"{defn.minimum:g}–{defn.maximum:g}")
+                if defn.description:
+                    edit.setToolTip(defn.description)
                 validator = QDoubleValidator(defn.minimum, defn.maximum, 6, edit)
                 validator.setNotation(QDoubleValidator.Notation.StandardNotation)
                 edit.setValidator(validator)
-                edit.textChanged.connect(self._refresh_add_button_state)
+                edit.textChanged.connect(self._refresh_button_states)
                 self._scores_form.addRow(f"{defn.name}:", edit)
                 self._score_inputs[defn.name] = edit
 
-        self._refresh_add_button_state()
+        self._refresh_button_states()
 
     def pending_scores(self) -> dict[str, float]:
-        """Coerced, validated score values. Only meaningful when the Add
-        Annotation button is enabled -- invalid/empty fields are simply
-        omitted rather than raising, since MainWindow only calls this from
-        the button's own click handler.
+        """Coerced, validated score values. Only meaningful when Add/Edit
+        Annotation is enabled -- invalid/empty fields are simply omitted
+        rather than raising, since MainWindow only calls this from those
+        buttons' own click handlers, which only enable once every field is
+        valid (see _refresh_button_states).
         """
         result: dict[str, float] = {}
         for defn in self._score_definitions:
@@ -216,31 +234,35 @@ class InspectorPanel(QWidget):
         in_text = format_time(self._pending_in) if self._pending_in is not None else "--"
         out_text = format_time(self._pending_out) if self._pending_out is not None else "--"
         self._pending_label.setText(f"In: {in_text} / Out: {out_text}")
-        self._refresh_add_button_state()
+        self._refresh_button_states()
 
-    def _refresh_add_button_state(self) -> None:
+    def _scores_valid(self) -> tuple[bool, str]:
+        if not self._scoring_enabled:
+            return True, ""
+        for defn in self._score_definitions:
+            edit = self._score_inputs.get(defn.name)
+            if edit is None:
+                continue
+            try:
+                defn.coerce(edit.text())
+            except ValueError as exc:
+                return False, str(exc)
+        return True, ""
+
+    def _refresh_button_states(self) -> None:
+        scores_valid, error = self._scores_valid()
+        self._score_error_label.setText(error)
+
         in_out_valid = (
             self._pending_in is not None
             and self._pending_out is not None
             and self._pending_out > self._pending_in
         )
-        scores_valid = True
-        error = ""
-        if self._scoring_enabled:
-            for defn in self._score_definitions:
-                edit = self._score_inputs.get(defn.name)
-                if edit is None:
-                    continue
-                try:
-                    defn.coerce(edit.text())
-                except ValueError as exc:
-                    scores_valid = False
-                    if not error:
-                        error = str(exc)
-        self._score_error_label.setText(error)
         self._add_cut_btn.setEnabled(in_out_valid and scores_valid)
+        self._edit_cut_btn.setEnabled(self.selected_cut_id() is not None and scores_valid)
 
     def set_cuts(self, cuts: list[Cut], score_definitions: list[ScoreDefinition], scoring_enabled: bool) -> None:
+        self._cuts_list.blockSignals(True)
         self._cuts_list.clear()
         self._cuts_by_row = []
         for cut in cuts:
@@ -255,7 +277,12 @@ class InspectorPanel(QWidget):
             text = f"{format_time(cut.start)} – {format_time(cut.end)}{label_part}{scores_part}{incomplete_part}"
             item = QListWidgetItem(text)
             self._cuts_list.addItem(item)
-            self._cuts_by_row.append(cut.id)
+            self._cuts_by_row.append(cut)
+        self._cuts_list.blockSignals(False)
+        # Rebuilding the list drops any selection -- clear the fields that
+        # were populated from whatever was selected before, rather than
+        # leaving stale data on screen with no selection to back it.
+        self._on_cut_selection_changed(self._cuts_list.currentRow())
 
     def set_annotated(self, annotated: bool, has_entry: bool) -> None:
         if annotated:
@@ -270,12 +297,15 @@ class InspectorPanel(QWidget):
     def selected_cut_id(self) -> str | None:
         row = self._cuts_list.currentRow()
         if 0 <= row < len(self._cuts_by_row):
-            return self._cuts_by_row[row]
+            return self._cuts_by_row[row].id
         return None
 
     # -- Internal signal glue ------------------------------------------------
     def _emit_add_cut(self) -> None:
         self.add_cut_requested.emit(self.selected_label_name())
+
+    def _emit_edit_cut(self) -> None:
+        self.edit_cut_requested.emit(self.selected_label_name())
 
     def _emit_delete_cut(self) -> None:
         cut_id = self.selected_cut_id()
@@ -285,8 +315,34 @@ class InspectorPanel(QWidget):
     def _on_cut_double_clicked(self, item: QListWidgetItem) -> None:
         row = self._cuts_list.row(item)
         if 0 <= row < len(self._cuts_by_row):
-            self.seek_to_cut_requested.emit(self._cuts_by_row[row])
+            self.seek_to_cut_requested.emit(self._cuts_by_row[row].id)
+
+    def _on_cut_selection_changed(self, row: int) -> None:
+        """Load the selected cut's label/scores into the shared input
+        fields (blank for any score it doesn't have a value for yet) so the
+        user can review, fix, or fill them in and click Edit Annotation.
+        Mark In/Out is cleared -- editing doesn't change a cut's timing,
+        and leaving a stale pending range around risks an accidental
+        duplicate "Add Annotation" using the just-loaded label/scores.
+        """
+        if 0 <= row < len(self._cuts_by_row):
+            cut = self._cuts_by_row[row]
+            self.select_label(cut.label)
+            for defn in self._score_definitions:
+                edit = self._score_inputs.get(defn.name)
+                if edit is None:
+                    continue
+                value = cut.scores.get(defn.name)
+                edit.setText("" if value is None else f"{value:g}")
+        else:
+            for edit in self._score_inputs.values():
+                edit.clear()
+        self._pending_in = None
+        self._pending_out = None
+        self._refresh_pending_label()
 
     def select_cut_by_id(self, cut_id: str) -> None:
-        if cut_id in self._cuts_by_row:
-            self._cuts_list.setCurrentRow(self._cuts_by_row.index(cut_id))
+        for row, cut in enumerate(self._cuts_by_row):
+            if cut.id == cut_id:
+                self._cuts_list.setCurrentRow(row)
+                return

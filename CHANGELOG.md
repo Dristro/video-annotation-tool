@@ -5,6 +5,32 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added: edit existing annotations (REQUIREMENT.md #10)
+
+- A cut can now be edited after the fact, not just deleted and re-added --
+  in particular, one flagged incomplete (missing a score added after it
+  was created) can now actually be fixed instead of just showing a
+  warning forever.
+- Selecting a cut -- by clicking it on the timeline/progress bar, or in
+  the Cuts list -- loads its current label and scores into the same
+  fields used to add a new annotation: existing values show up prefilled,
+  any score the cut doesn't have yet is left blank. A new "Edit
+  Annotation" button (next to "Add Annotation", to its left/inside per
+  request) saves the change back onto that same cut.
+- "Edit Annotation" only enables once every current score field is valid
+  -- same requirement as "Add Annotation" -- specifically to prevent an
+  edit from silently wiping out a previously-recorded score the user
+  didn't intend to touch (`AnnotationStore.update_cut(scores=...)`
+  replaces the whole scores dict when given one).
+- Removed the standalone "Edit Scores…" button from the inspector panel
+  -- scoring configuration is now reached only via **Edit > Edit
+  Scores…**, keeping this panel focused on the current annotation.
+- `ScoreDefinition` gained a `description` field (free text describing
+  what the score means), shown in the score editor's table and as a
+  tooltip on the score's input field. Threaded through
+  `project_store`/`Project` CRUD and `ScoreEditorDialog`'s add/edit form.
+- 7 new tests (94 total).
+
 ### Added: per-cut scores (REQUIREMENT.md #9)
 
 - New optional, per-project feature: alongside a cut's label, the user can

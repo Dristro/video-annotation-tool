@@ -252,6 +252,48 @@ before implementing (don't re-litigate without checking back):
   Annotation"/"Add Annotation" -- this doesn't toggle based on whether
   *this* project has scoring enabled; a labeled cut is already conceptually
   an annotation, scores are just an optional enrichment of it.
+- `ScoreDefinition` has a `description` field (free text, shown in
+  `ScoreEditorDialog`'s table and as a tooltip on the corresponding
+  `QLineEdit` in `InspectorPanel`) -- same shape as `Label.description`.
+- **Editing an existing annotation** (REQUIREMENT.md #10) reuses the same
+  label combo + score `QLineEdit`s as adding a new one, rather than a
+  separate dialog -- this is why the two action buttons
+  (`_edit_cut_btn`, `_add_cut_btn`) sit side by side in
+  `InspectorPanel.__init__` (edit on the left/inside, add on the right,
+  per explicit user request on button placement). Mechanics:
+  - `InspectorPanel._cuts_by_row` stores full `Cut` objects (not just ids)
+    so selecting a row has the data needed to populate the fields.
+  - `QListWidget.currentRowChanged` (wired once, in `__init__`) is the
+    single trigger for "a cut is now selected" -- fires identically
+    whether the row was clicked directly, or selected programmatically via
+    `select_cut_by_id()` (which is what `TimelineWidget.cut_selected` is
+    wired to, so clicking a cut on the timeline/progress bar drives the
+    same population path as clicking it in the cuts list).
+  - Selecting a cut populates the label combo and each score field with
+    that cut's current value, or blanks the field if the cut doesn't have
+    a value for that score yet (`cut.scores.get(defn.name)` is `None`) --
+    this is *how* an incomplete cut gets filled in: the existing values
+    show up prefilled, the missing one is blank and the user fills only
+    that. Also clears Mark In/Out on selection -- editing doesn't touch
+    timing, and leaving a stale pending range around would let "Add
+    Annotation" fire using the just-loaded label/scores, creating an
+    accidental duplicate.
+  - **`_edit_cut_btn` requires full score validity to enable**, exactly
+    like `_add_cut_btn` (shared `_scores_valid()` check) -- not "whatever
+    is currently valid, save that." This is a deliberate safety property:
+    `AnnotationStore.update_cut(scores=...)` *replaces* the whole scores
+    dict when a `scores` argument is passed (see below), so if editing
+    were allowed with some fields blank/invalid, saving would silently
+    delete previously-recorded values for the fields the user didn't
+    touch. Requiring full validity before the button even enables makes
+    that data loss structurally impossible rather than something to
+    remember to guard against.
+  - `MainWindow._on_edit_cut()` calls `Project.update_cut(rel, cut_id,
+    label=label, scores=scores)`, then re-selects the same `cut_id` via
+    `select_cut_by_id()` after `_refresh_cuts_and_status()` rebuilds the
+    list (which otherwise drops the selection) -- this is what makes the
+    save visibly "stick" instead of the panel going blank right after
+    editing.
 
 ### The "annotated" flag is not just "has cuts"
 

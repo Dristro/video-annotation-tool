@@ -38,7 +38,15 @@ time.
    Renaming a score updates it across all cuts already recorded with it, same as renaming a
    label. If a score is added to project settings after cuts already exist, those existing
    cuts are not retroactively required to have it -- they are simply flagged as incomplete
-   (missing that score) rather than blocked or auto-filled.
+   (missing that score) rather than blocked or auto-filled. Each score may also have a
+   description, shown in the score editor, describing what it means.
+10. Editing an existing annotation: an annotation (cut) that already exists -- including one
+    flagged incomplete because it predates a score, or a video's worth of cuts added before
+    scoring was turned on at all -- must be editable, not just delete-and-recreate-able.
+    Selecting an annotation (e.g. by clicking it on the video progress bar/timeline) loads its
+    current label and scores into the same input area used to add a new one, so the user can
+    fill in what's missing or correct what's there, then save the change back onto that same
+    annotation.
 
 
 ## Non-functional requirements
@@ -93,3 +101,5 @@ time.
 * Adding a new score after cuts already exist does not retroactively require or block those existing
   cuts -- they are simply flagged as incomplete (missing that score) so the user can go back and fill
   it in if they choose to, without anything being enforced.
+* A score may have a description (free text) explaining what it means, editable alongside its name/
+  range/dtype in the score editor.

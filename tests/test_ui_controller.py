@@ -297,6 +297,146 @@ def test_break_continuation_leaves_link_when_declined(window, monkeypatch):
     assert updated.continues_forward is True
 
 
+def test_undo_add_cut_removes_it(window):
+    video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    window._current_video_path = video_path
+    window.inspector_panel.set_pending_in(1.0)
+    window.inspector_panel.set_pending_out(2.0)
+    window._on_add_cut("goal")
+    assert len(window.project.get_entry("a.mp4").cuts) == 1
+
+    window._on_undo()
+
+    entry = window.project.get_entry("a.mp4")
+    assert entry is None or entry.cuts == []
+
+
+def test_redo_add_cut_restores_same_id(window):
+    video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    window._current_video_path = video_path
+    window.inspector_panel.set_pending_in(1.0)
+    window.inspector_panel.set_pending_out(2.0)
+    window._on_add_cut("goal")
+    original_id = window.project.get_entry("a.mp4").cuts[0].id
+    window._on_undo()
+
+    window._on_redo()
+
+    cuts = window.project.get_entry("a.mp4").cuts
+    assert len(cuts) == 1
+    assert cuts[0].id == original_id
+    assert cuts[0].label == "goal"
+
+
+def test_undo_redo_noop_when_stack_empty(window):
+    window._on_undo()  # must not raise
+    window._on_redo()  # must not raise
+
+
+def test_undo_delete_cut_restores_it(window):
+    video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    window._current_video_path = video_path
+    cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal")
+    window._refresh_cuts_and_status("a.mp4")
+    window.inspector_panel.select_cut_by_id(cut.id)
+    window._on_delete_cut(cut.id)  # MainWindow's own handler -- no confirm dialog at this level
+    assert window.project.get_entry("a.mp4").cuts == []
+
+    window._on_undo()
+
+    cuts = window.project.get_entry("a.mp4").cuts
+    assert len(cuts) == 1
+    assert cuts[0].id == cut.id
+    assert cuts[0].label == "goal"
+
+
+def test_redo_delete_cut_removes_it_again(window):
+    video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    window._current_video_path = video_path
+    cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal")
+    window._refresh_cuts_and_status("a.mp4")
+    window._on_delete_cut(cut.id)
+    window._on_undo()
+    assert len(window.project.get_entry("a.mp4").cuts) == 1
+
+    window._on_redo()
+
+    assert window.project.get_entry("a.mp4").cuts == []
+
+
+def test_undo_edit_cut_restores_previous_label_and_scores(window):
+    video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    window._current_video_path = video_path
+    window.project.add_label("foul", "f")
+    cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal", {"Technique": 50})
+    window._refresh_cuts_and_status("a.mp4")
+    window.inspector_panel.select_cut_by_id(cut.id)
+    window._on_edit_cut("foul")
+    assert window.project.get_entry("a.mp4").cuts[0].label == "foul"
+
+    window._on_undo()
+
+    updated = window.project.get_entry("a.mp4").cuts[0]
+    assert updated.label == "goal"
+    assert updated.scores == {"Technique": 50}
+
+
+def test_redo_edit_cut_reapplies_new_label(window):
+    video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    window._current_video_path = video_path
+    window.project.add_label("foul", "f")
+    cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal")
+    window._refresh_cuts_and_status("a.mp4")
+    window.inspector_panel.select_cut_by_id(cut.id)
+    window._on_edit_cut("foul")
+    window._on_undo()
+
+    window._on_redo()
+
+    assert window.project.get_entry("a.mp4").cuts[0].label == "foul"
+
+
+def test_undo_redo_edit_cut_retiming(window):
+    video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    window._current_video_path = video_path
+    cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal")
+    window._refresh_cuts_and_status("a.mp4")
+    window.inspector_panel.select_cut_by_id(cut.id)
+    window.inspector_panel.set_pending_in(10.0)
+    window.inspector_panel.set_pending_out(20.0)
+    window._on_edit_cut("goal")
+    assert window.project.get_entry("a.mp4").cuts[0].start == 10.0
+
+    window._on_undo()
+    reverted = window.project.get_entry("a.mp4").cuts[0]
+    assert reverted.start == 1.0
+    assert reverted.end == 2.0
+
+    window._on_redo()
+    reapplied = window.project.get_entry("a.mp4").cuts[0]
+    assert reapplied.start == 10.0
+    assert reapplied.end == 20.0
+
+
+def test_undo_after_switching_videos_does_not_crash_and_still_applies(window):
+    # Undoing an action recorded on a video that isn't the current one
+    # anymore must still mutate the right data without touching the UI
+    # for whatever video happens to be selected now.
+    video_a = os.path.join(window.project.config.videos_dir, "a.mp4")
+    window._current_video_path = video_a
+    window.inspector_panel.set_pending_in(1.0)
+    window.inspector_panel.set_pending_out(2.0)
+    window._on_add_cut("goal")
+
+    video_b = os.path.join(window.project.config.videos_dir, "b.mp4")
+    window._current_video_path = video_b
+
+    window._on_undo()
+
+    entry = window.project.get_entry("a.mp4")
+    assert entry is None or entry.cuts == []
+
+
 def test_switch_project_updates_recent_menu(window, monkeypatch, tmp_path):
     from vat import app_settings
 

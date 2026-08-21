@@ -5,6 +5,21 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added: undo/redo for cut add/edit/delete
+
+- **Added**: a small command-pattern `UndoStack` (`project/undo_stack.py`)
+  covers add/edit(incl. re-time)/delete of a cut, wired to Edit > Undo/Redo
+  and the platform-standard shortcuts (`QKeySequence.StandardKey.Undo`/
+  `.Redo` — Cmd+Z/Cmd+Shift+Z on macOS). Undoing an "add" removes it by id;
+  undoing a "delete" or redoing an "add" re-inserts the *same* `Cut`
+  object via a new `Project.restore_cut()`, preserving its id (and
+  therefore any continuation link) rather than minting a fresh one.
+  Undoing/redoing an action recorded against a video that isn't currently
+  open still mutates the right data; it just doesn't force a UI refresh
+  for whatever video happens to be open now. Does **not** cover
+  label/score renames or breaking a continuation link (`BACKLOG.md`).
+- 24 new tests (227 total).
+
 ### Added: dark theme
 
 - **Added**: `vat.app.apply_dark_theme()` applies a dark `QPalette` under

@@ -11,6 +11,7 @@ from vat.errors import CutNotFoundError
 from vat.media.video_scanner import probe_duration
 from vat.playback.preloader import Preloader
 from vat.project.project import Project
+from vat.project.undo_stack import Command, UndoStack
 from vat.ui.inspector_panel import InspectorPanel
 from vat.ui.playlist_panel import PlaylistPanel
 from vat.ui.project_settings_dialog import ProjectSettingsDialog
@@ -33,6 +34,12 @@ class MainWindow(QMainWindow):
         self.project = project
         self._current_video_path: str | None = None
         self._preloader = Preloader()
+        # Covers cut add/edit/delete only, not label/score renames --
+        # those propagate across every video's cuts (rename_*_everywhere)
+        # and would need a full before/after snapshot of every affected
+        # cut to undo cleanly, which is meaningfully more machinery than
+        # this stack currently has (BACKLOG.md).
+        self._undo_stack = UndoStack()
 
         self.setWindowTitle(f"Video Annotation Tool — {project.config.project_dir}")
         self.resize(1280, 800)
@@ -109,6 +116,13 @@ class MainWindow(QMainWindow):
         quit_action.triggered.connect(self.close)
 
         edit_menu = self.menuBar().addMenu("&Edit")
+        undo_action = edit_menu.addAction("Undo")
+        undo_action.setShortcut(QKeySequence.StandardKey.Undo)
+        undo_action.triggered.connect(self._on_undo)
+        redo_action = edit_menu.addAction("Redo")
+        redo_action.setShortcut(QKeySequence.StandardKey.Redo)
+        redo_action.triggered.connect(self._on_redo)
+        edit_menu.addSeparator()
         project_settings_action = edit_menu.addAction("Project Settings…")
         project_settings_action.triggered.connect(self._on_open_project_settings)
 
@@ -280,14 +294,29 @@ class MainWindow(QMainWindow):
         continuation_id = self.inspector_panel.completing_continuation_id()
         if continues_forward and continuation_id is None:
             continuation_id = uuid.uuid4().hex
-        self.project.add_cut(
+        new_cut = self.project.add_cut(
             rel, start, end, label, scores,
             continuation_id=continuation_id, continues_forward=continues_forward,
         )
+        self._undo_stack.push(Command(
+            undo=lambda: self._remove_cut_and_sync(rel, new_cut.id),
+            redo=lambda: self._restore_cut_and_sync(rel, new_cut),
+        ))
         self.inspector_panel.clear_pending()
         self._refresh_cuts_and_status(rel)
         self.refresh_playlist()  # annotation count for this video just changed
         self._refresh_pending_continuation()  # this add may have just completed one
+
+    def _remove_cut_and_sync(self, rel: str, cut_id: str) -> None:
+        try:
+            self.project.remove_cut(rel, cut_id)
+        except CutNotFoundError:
+            pass
+        self._sync_after_undo_redo(rel)
+
+    def _restore_cut_and_sync(self, rel: str, cut) -> None:
+        self.project.restore_cut(rel, cut)
+        self._sync_after_undo_redo(rel)
 
     def _on_edit_cut(self, label: str) -> None:
         if self._current_video_path is None:
@@ -296,12 +325,15 @@ class MainWindow(QMainWindow):
         if cut_id is None:
             return
         rel = self.project.rel_path(self._current_video_path)
+        entry = self.project.get_entry(rel)
+        old_cut = next((c for c in entry.cuts if c.id == cut_id), None) if entry else None
+        if old_cut is None:
+            return
         scores = self.inspector_panel.pending_scores()
         retime = self.inspector_panel.pending_retime()
-        kwargs: dict = {"label": label, "scores": scores}
+        new_start, new_end = retime if retime is not None else (old_cut.start, old_cut.end)
         if retime is not None:
-            start, end = retime
-            if self.project.overlapping_cuts(rel, start, end, exclude_cut_id=cut_id):
+            if self.project.overlapping_cuts(rel, new_start, new_end, exclude_cut_id=cut_id):
                 confirm = QMessageBox.question(
                     self,
                     "Overlapping Annotation",
@@ -309,24 +341,58 @@ class MainWindow(QMainWindow):
                 )
                 if confirm != QMessageBox.StandardButton.Yes:
                     return
-            kwargs["start"] = start
-            kwargs["end"] = end
-        self.project.update_cut(rel, cut_id, **kwargs)
-        self._refresh_cuts_and_status(rel)
-        # Re-select the same cut so the panel visibly reflects the saved
-        # values rather than losing selection when the list rebuilds.
-        self.inspector_panel.select_cut_by_id(cut_id)
+        self._apply_cut_snapshot(rel, cut_id, new_start, new_end, label, scores)
+        self._undo_stack.push(Command(
+            undo=lambda: self._apply_cut_snapshot(
+                rel, cut_id, old_cut.start, old_cut.end, old_cut.label, old_cut.scores
+            ),
+            redo=lambda: self._apply_cut_snapshot(rel, cut_id, new_start, new_end, label, scores),
+        ))
+
+    def _apply_cut_snapshot(
+        self, rel: str, cut_id: str, start: float, end: float, label: str, scores: dict,
+    ) -> None:
+        """Overwrite a cut's start/end/label/scores in one shot -- shared
+        by _on_edit_cut and its undo/redo commands, since both are "make
+        this cut look like this snapshot" with no partial-field semantics.
+        """
+        self.project.update_cut(rel, cut_id, start=start, end=end, label=label, scores=dict(scores))
+        if self._current_video_path and self.project.rel_path(self._current_video_path) == rel:
+            self._refresh_cuts_and_status(rel)
+            # Re-select the same cut so the panel visibly reflects the
+            # saved values rather than losing selection when the list
+            # rebuilds.
+            self.inspector_panel.select_cut_by_id(cut_id)
 
     def _on_delete_cut(self, cut_id: str) -> None:
         if self._current_video_path is None:
             return
         rel = self.project.rel_path(self._current_video_path)
+        entry = self.project.get_entry(rel)
+        old_cut = next((c for c in entry.cuts if c.id == cut_id), None) if entry else None
         try:
             self.project.remove_cut(rel, cut_id)
         except CutNotFoundError:
             return
+        if old_cut is not None:
+            self._undo_stack.push(Command(
+                undo=lambda: self._restore_cut_and_sync(rel, old_cut),
+                redo=lambda: self._remove_cut_and_sync(rel, cut_id),
+            ))
         self._refresh_cuts_and_status(rel)
         self.refresh_playlist()  # annotation count for this video just changed
+
+    def _sync_after_undo_redo(self, rel: str) -> None:
+        if self._current_video_path and self.project.rel_path(self._current_video_path) == rel:
+            self._refresh_cuts_and_status(rel)
+            self._refresh_pending_continuation()
+        self.refresh_playlist()  # annotation count may have changed regardless of current video
+
+    def _on_undo(self) -> None:
+        self._undo_stack.undo()
+
+    def _on_redo(self) -> None:
+        self._undo_stack.redo()
 
     def _on_break_continuation(self, cut_id: str) -> None:
         if self._current_video_path is None:

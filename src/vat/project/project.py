@@ -78,6 +78,15 @@ class Project:
             ),
         )
 
+    def restore_cut(self, rel_path: str, cut: Cut) -> Cut:
+        """Re-insert an exact Cut object (same id and every field) rather
+        than constructing a fresh one -- used by MainWindow's undo/redo
+        stack to redo an "add" or undo a "delete" without minting a new id
+        (a new id would leave any continuation link pointing at an id that
+        no longer exists).
+        """
+        return self.annotation_store.add_cut(rel_path, cut)
+
     def update_cut(self, rel_path: str, cut_id: str, **kwargs) -> Cut:
         return self.annotation_store.update_cut(rel_path, cut_id, **kwargs)
 

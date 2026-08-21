@@ -22,7 +22,12 @@ promise of order — just so nothing gets silently lost. Move items to
 - [ ] Waveform/audio preview under the timeline.
 - [ ] Drag-to-resize cut edges directly on the timeline, instead of only
       Mark In / Mark Out buttons + a separate "Add Cut" action.
-- [ ] Undo/redo for cut edits and label changes.
+- [ ] Undo/redo only covers cut add/edit/delete (`UndoStack` in
+      `project/undo_stack.py`, wired in `MainWindow`), not label/score
+      renames -- those propagate across every video's cuts via
+      `rename_*_everywhere` and would need a full before/after snapshot of
+      every affected cut to undo cleanly. `_on_break_continuation()` also
+      isn't on the undo stack yet.
 
 ## Scores follow-ups
 

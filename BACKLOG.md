@@ -11,7 +11,7 @@ promise of order — just so nothing gets silently lost. Move items to
 - [ ] Publish a Homebrew formula/cask so `brew install vat` + running `vat`
       from any Terminal works, per the user's stated long-term plan. Explicitly
       out of scope for now — current "deployment" is just running from the
-      `prod` branch locally.
+      `stable` branch locally.
 - [ ] `vat` command currently requires the repo's venv on PATH; no
       standalone binary yet.
 

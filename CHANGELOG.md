@@ -5,6 +5,19 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed: `prod` branch renamed to `stable`; per-branch READMEs
+
+- Renamed the `prod` branch to `stable` (same purpose: what end users run
+  locally). Ahead of pushing this project to GitHub for others to use and
+  contribute to.
+- `main` and `stable` now each carry their own `README.md` -- `main`'s is
+  contributor-facing (dev setup, testing conventions, pointers to
+  `CLAUDE.md`), `stable`'s is user-facing (install/run/usage walkthrough).
+  Documented the resulting workflow change in `CLAUDE.md`: promoting
+  `main` into `stable` is now a real merge (conflicts on `README.md` every
+  time, resolved by keeping `stable`'s own copy), not a plain fast-forward
+  like before.
+
 ### Added: edit existing annotations (REQUIREMENT.md #10)
 
 - A cut can now be edited after the fact, not just deleted and re-added --

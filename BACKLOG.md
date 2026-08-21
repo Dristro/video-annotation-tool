@@ -22,9 +22,6 @@ promise of order — just so nothing gets silently lost. Move items to
 - [ ] Waveform/audio preview under the timeline.
 - [ ] Drag-to-resize cut edges directly on the timeline, instead of only
       Mark In / Mark Out buttons + a separate "Add Cut" action.
-- [ ] Dark theme / visual polish matching DaVinci Resolve's actual palette
-      and spacing — current layout matches the *arrangement* (playlist /
-      preview / timeline / inspector) but not the visual styling.
 - [ ] Undo/redo for cut edits and label changes.
 
 ## Scores follow-ups

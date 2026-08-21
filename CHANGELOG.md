@@ -5,6 +5,19 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added: dark theme
+
+- **Added**: `vat.app.apply_dark_theme()` applies a dark `QPalette` under
+  Qt's "Fusion" style (the one that actually honors a custom palette —
+  macOS's native style mostly ignores it and follows OS appearance
+  instead), applied unconditionally at startup. No light/dark toggle —
+  not asked for. Custom-painted widgets (`TimelineWidget`'s track/cut
+  colors) are unaffected by design, since they draw with their own
+  `QPainter` colors rather than the palette.
+- 2 new tests (211 total). Visual result not confirmed on a real display
+  by the agent — please sanity-check it actually looks right
+  (`BACKLOG.md`'s existing verification-gap note applies here too).
+
 ### Added: GitHub Actions CI running pytest
 
 - **Added**: `.github/workflows/tests.yml` runs the full `pytest` suite on

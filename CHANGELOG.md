@@ -5,6 +5,19 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added: re-time an existing annotation via Edit Annotation
+
+- **Added**: Edit Annotation can now adjust a cut's start/end, not just
+  its label/scores. Previously the only way to change timing was delete +
+  re-add. Mark In/Out are cleared (not pre-filled) on selecting a cut, same
+  as before — clicking Edit Annotation with both still unset keeps the
+  cut's existing timing; explicitly pressing Mark In and/or Mark Out
+  before clicking Edit Annotation re-times it to the new range. Half-set
+  (only one of Mark In/Out touched) disables the button, same rule as Add
+  Annotation. Re-timing into an overlap with another cut on the same video
+  prompts for confirmation, reusing `Project.overlapping_cuts()`.
+- 7 new tests (180 total).
+
 ### Added: single "Project Settings…" dialog for labels + scores
 
 - **Added**: `ProjectSettingsDialog` merges label and score management

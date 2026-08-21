@@ -344,7 +344,33 @@ class InspectorPanel(QWidget):
                 and self._pending_out > self._pending_in
             )
         self._add_cut_btn.setEnabled(in_out_valid and scores_valid)
-        self._edit_cut_btn.setEnabled(self.selected_cut_id() is not None and scores_valid)
+        self._edit_cut_btn.setEnabled(self.selected_cut_id() is not None and scores_valid and self._retime_valid())
+
+    def _retime_valid(self) -> bool:
+        """Editing an existing cut's timing is opt-in: Mark In/Out both
+        being untouched (None) means "keep the existing start/end", which
+        is always valid. Only when the user has explicitly set at least
+        one of them does it need to form a real range before Edit
+        Annotation can fire -- half-set (only one of the two) is exactly
+        as invalid here as it is for Add Annotation.
+        """
+        if self._pending_in is None and self._pending_out is None:
+            return True
+        return (
+            self._pending_in is not None
+            and self._pending_out is not None
+            and self._pending_out > self._pending_in
+        )
+
+    def pending_retime(self) -> tuple[float, float] | None:
+        """(start, end) to re-time the selected cut to, or None to leave
+        its timing untouched. Only meaningful once _retime_valid() is
+        True -- MainWindow only reads this from Edit Annotation's own
+        click handler, which only enables once that holds.
+        """
+        if self._pending_in is None and self._pending_out is None:
+            return None
+        return self._pending_in, self._pending_out
 
     def set_cuts(self, cuts: list[Cut], score_definitions: list[ScoreDefinition], scoring_enabled: bool) -> None:
         self._cuts_list.blockSignals(True)
@@ -425,9 +451,13 @@ class InspectorPanel(QWidget):
         """Load the selected cut's label/scores into the shared input
         fields (blank for any score it doesn't have a value for yet) so the
         user can review, fix, or fill them in and click Edit Annotation.
-        Mark In/Out is cleared -- editing doesn't change a cut's timing,
-        and leaving a stale pending range around risks an accidental
-        duplicate "Add Annotation" using the just-loaded label/scores.
+        Mark In/Out is cleared, not pre-filled from the cut -- leaving a
+        stale pending range around risks an accidental duplicate "Add
+        Annotation" using the just-loaded label/scores. Clicking Edit
+        Annotation with Mark In/Out still unset keeps the cut's existing
+        timing; explicitly pressing Mark In and/or Mark Out again before
+        clicking Edit Annotation re-times it to the new range instead
+        (see _retime_valid()/pending_retime()).
         """
         if 0 <= row < len(self._cuts_by_row):
             cut = self._cuts_by_row[row]

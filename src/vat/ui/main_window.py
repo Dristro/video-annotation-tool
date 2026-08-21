@@ -293,7 +293,21 @@ class MainWindow(QMainWindow):
             return
         rel = self.project.rel_path(self._current_video_path)
         scores = self.inspector_panel.pending_scores()
-        self.project.update_cut(rel, cut_id, label=label, scores=scores)
+        retime = self.inspector_panel.pending_retime()
+        kwargs: dict = {"label": label, "scores": scores}
+        if retime is not None:
+            start, end = retime
+            if self.project.overlapping_cuts(rel, start, end, exclude_cut_id=cut_id):
+                confirm = QMessageBox.question(
+                    self,
+                    "Overlapping Annotation",
+                    "This new range overlaps an existing annotation on this video. Save it anyway?",
+                )
+                if confirm != QMessageBox.StandardButton.Yes:
+                    return
+            kwargs["start"] = start
+            kwargs["end"] = end
+        self.project.update_cut(rel, cut_id, **kwargs)
         self._refresh_cuts_and_status(rel)
         # Re-select the same cut so the panel visibly reflects the saved
         # values rather than losing selection when the list rebuilds.

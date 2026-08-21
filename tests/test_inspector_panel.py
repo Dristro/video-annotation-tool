@@ -87,6 +87,48 @@ def test_selecting_an_existing_cut_clears_continuation_completion_state(panel):
     assert panel._continues_checkbox.isChecked() is False
 
 
+def test_edit_enabled_when_mark_in_out_untouched(panel):
+    cut = Cut(start=1.0, end=2.0, label="goal")
+    panel.set_cuts([cut], [], False)
+    panel.select_cut_by_id(cut.id)
+
+    assert panel._edit_cut_btn.isEnabled() is True
+    assert panel.pending_retime() is None
+
+
+def test_edit_disabled_when_only_mark_in_set(panel):
+    cut = Cut(start=1.0, end=2.0, label="goal")
+    panel.set_cuts([cut], [], False)
+    panel.select_cut_by_id(cut.id)
+
+    panel.set_pending_in(5.0)
+
+    assert panel._edit_cut_btn.isEnabled() is False
+
+
+def test_edit_enabled_with_valid_retime_range(panel):
+    cut = Cut(start=1.0, end=2.0, label="goal")
+    panel.set_cuts([cut], [], False)
+    panel.select_cut_by_id(cut.id)
+
+    panel.set_pending_in(5.0)
+    panel.set_pending_out(10.0)
+
+    assert panel._edit_cut_btn.isEnabled() is True
+    assert panel.pending_retime() == (5.0, 10.0)
+
+
+def test_edit_disabled_when_retime_out_before_in(panel):
+    cut = Cut(start=1.0, end=2.0, label="goal")
+    panel.set_cuts([cut], [], False)
+    panel.select_cut_by_id(cut.id)
+
+    panel.set_pending_in(10.0)
+    panel.set_pending_out(5.0)
+
+    assert panel._edit_cut_btn.isEnabled() is False
+
+
 def test_delete_cut_asks_for_confirmation_and_emits_when_confirmed(panel, monkeypatch):
     cut = Cut(start=1.0, end=2.0, label="goal")
     panel.set_cuts([cut], [], False)

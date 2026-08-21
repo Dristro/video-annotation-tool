@@ -31,12 +31,6 @@ promise of order — just so nothing gets silently lost. Move items to
 
 ## Scores follow-ups
 
-- [ ] Editing an existing annotation only covers label + scores; the
-      start/end time can't be adjusted after the cut is created (only via
-      delete + re-add). Deliberately out of scope for the edit-annotation
-      feature as requested (focused on filling in/correcting scores), but
-      worth revisiting if re-timing existing cuts turns out to matter.
-
 ## Cross-video continuation follow-ups
 
 - [ ] No way to break/undo a continuation link once completed, short of

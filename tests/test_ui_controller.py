@@ -226,6 +226,51 @@ def test_edit_annotation_does_not_affect_add_annotation_state(scoring_window):
     assert win.inspector_panel._add_cut_btn.isEnabled() is False
 
 
+def test_edit_annotation_without_mark_in_out_keeps_existing_timing(window):
+    window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal")
+    window._refresh_cuts_and_status("a.mp4")
+    window.inspector_panel.select_cut_by_id(cut.id)
+
+    window._on_edit_cut("goal")
+
+    updated = window.project.get_entry("a.mp4").cuts[0]
+    assert updated.start == 1.0
+    assert updated.end == 2.0
+
+
+def test_edit_annotation_with_mark_in_out_retimes_cut(window):
+    window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal")
+    window._refresh_cuts_and_status("a.mp4")
+    window.inspector_panel.select_cut_by_id(cut.id)
+
+    window.inspector_panel.set_pending_in(10.0)
+    window.inspector_panel.set_pending_out(20.0)
+    window._on_edit_cut("goal")
+
+    updated = window.project.get_entry("a.mp4").cuts[0]
+    assert updated.start == 10.0
+    assert updated.end == 20.0
+
+
+def test_edit_annotation_retime_overlap_prompts_and_is_skipped_when_declined(window, monkeypatch):
+    window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    window.project.add_cut("a.mp4", 1.0, 5.0, "goal")
+    cut2 = window.project.add_cut("a.mp4", 10.0, 20.0, "goal")
+    window._refresh_cuts_and_status("a.mp4")
+    window.inspector_panel.select_cut_by_id(cut2.id)
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.No)
+    window.inspector_panel.set_pending_in(3.0)
+    window.inspector_panel.set_pending_out(8.0)
+    window._on_edit_cut("goal")
+
+    unchanged = next(c for c in window.project.get_entry("a.mp4").cuts if c.id == cut2.id)
+    assert unchanged.start == 10.0
+    assert unchanged.end == 20.0
+
+
 def test_refresh_playlist_includes_annotation_counts(window):
     # refresh_playlist() needs a real file for its filesystem scan
     # (project.list_videos()) to find -- but populating the playlist also

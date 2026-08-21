@@ -93,6 +93,9 @@ class MainWindow(QMainWindow):
         open_action = file_menu.addAction("Open Project…")
         open_action.triggered.connect(self._on_open_project)
 
+        self._recent_menu = file_menu.addMenu("Open Recent")
+        self._refresh_recent_menu()
+
         file_menu.addSeparator()
 
         change_videos_action = file_menu.addAction("Change Videos Directory…")
@@ -425,6 +428,25 @@ class MainWindow(QMainWindow):
             return
         self._switch_project(project)
 
+    def _refresh_recent_menu(self) -> None:
+        self._recent_menu.clear()
+        recents = [p for p in app_settings.load_recent_project_dirs() if p != self.project.config.project_dir]
+        if not recents:
+            empty_action = self._recent_menu.addAction("(No other recent projects)")
+            empty_action.setEnabled(False)
+            return
+        for path in recents:
+            action = self._recent_menu.addAction(path)
+            action.triggered.connect(lambda checked=False, p=path: self._on_open_recent(p))
+
+    def _on_open_recent(self, path: str) -> None:
+        try:
+            project = Project.open(path)
+        except Exception as exc:  # noqa: BLE001 -- surfaced directly to the user
+            QMessageBox.warning(self, "Cannot Open Project", str(exc))
+            return
+        self._switch_project(project)
+
     def _switch_project(self, project: Project) -> None:
         self.project = project
         app_settings.save_last_project_dir(project.config.project_dir)
@@ -432,6 +454,7 @@ class MainWindow(QMainWindow):
         self.inspector_panel.set_labels(project.config.labels)
         self.inspector_panel.set_score_definitions(project.config.scoring_enabled, project.config.score_definitions)
         self._register_label_shortcuts()
+        self._refresh_recent_menu()
         self._current_video_path = None
         self.refresh_playlist()
 

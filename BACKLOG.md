@@ -26,8 +26,6 @@ promise of order — just so nothing gets silently lost. Move items to
       and spacing — current layout matches the *arrangement* (playlist /
       preview / timeline / inspector) but not the visual styling.
 - [ ] Undo/redo for cut edits and label changes.
-- [ ] "Recent projects" list (currently only remembers the single
-      last-opened project).
 
 ## Scores follow-ups
 

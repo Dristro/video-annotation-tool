@@ -297,6 +297,49 @@ def test_break_continuation_leaves_link_when_declined(window, monkeypatch):
     assert updated.continues_forward is True
 
 
+def test_switch_project_updates_recent_menu(window, monkeypatch, tmp_path):
+    from vat import app_settings
+
+    monkeypatch.setattr(app_settings, "_settings_path", lambda: tmp_path / "settings.json")
+
+    def _new_project(name):
+        proj_dir = tmp_path / f"{name}_project"
+        videos_dir = tmp_path / f"{name}_videos"
+        videos_dir.mkdir()
+        return Project.create(str(proj_dir), str(videos_dir))
+
+    project_a = _new_project("a")
+    window._switch_project(project_a)
+    # Nothing else has ever been opened yet, and the current project is
+    # excluded from its own recent list.
+    assert [a.text() for a in window._recent_menu.actions()] == ["(No other recent projects)"]
+
+    project_b = _new_project("b")
+    window._switch_project(project_b)
+    assert [a.text() for a in window._recent_menu.actions()] == [project_a.config.project_dir]
+
+
+def test_open_recent_switches_project(window, monkeypatch, tmp_path):
+    from vat import app_settings
+
+    monkeypatch.setattr(app_settings, "_settings_path", lambda: tmp_path / "settings.json")
+
+    def _new_project(name):
+        proj_dir = tmp_path / f"{name}_project"
+        videos_dir = tmp_path / f"{name}_videos"
+        videos_dir.mkdir()
+        return Project.create(str(proj_dir), str(videos_dir))
+
+    project_a = _new_project("a")
+    window._switch_project(project_a)
+    project_b = _new_project("b")
+    window._switch_project(project_b)
+
+    window._on_open_recent(project_a.config.project_dir)
+
+    assert window.project.config.project_dir == project_a.config.project_dir
+
+
 def test_refresh_playlist_includes_annotation_counts(window):
     # refresh_playlist() needs a real file for its filesystem scan
     # (project.list_videos()) to find -- but populating the playlist also

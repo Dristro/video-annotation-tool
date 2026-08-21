@@ -5,6 +5,17 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added: "Open Recent" projects submenu
+
+- **Added**: File > Open Recent lists up to 8 previously-opened project
+  directories (most-recent-first, current project excluded from its own
+  list), stored alongside the existing single "last opened" setting in
+  `~/Library/Application Support/vat/settings.json`. `app_settings
+  .save_last_project_dir()` now read-modify-writes that file instead of
+  blindly overwriting it, which would otherwise have wiped the new
+  `recent_project_dirs` list every time a project was opened.
+- 8 new tests (205 total).
+
 ### Added: short id tag distinguishes which cuts a continuation link pairs
 
 - **Added**: cuts with a continuation link now show a short 4-char tag

@@ -12,9 +12,8 @@ from vat.media.video_scanner import probe_duration
 from vat.playback.preloader import Preloader
 from vat.project.project import Project
 from vat.ui.inspector_panel import InspectorPanel
-from vat.ui.label_editor_dialog import LabelEditorDialog
 from vat.ui.playlist_panel import PlaylistPanel
-from vat.ui.score_editor_dialog import ScoreEditorDialog
+from vat.ui.project_settings_dialog import ProjectSettingsDialog
 from vat.ui.timeline_widget import TimelineWidget
 from vat.ui.video_panel import VideoPanel
 
@@ -107,10 +106,8 @@ class MainWindow(QMainWindow):
         quit_action.triggered.connect(self.close)
 
         edit_menu = self.menuBar().addMenu("&Edit")
-        edit_labels_action = edit_menu.addAction("Edit Labels…")
-        edit_labels_action.triggered.connect(self._on_edit_labels)
-        edit_scores_action = edit_menu.addAction("Edit Scores…")
-        edit_scores_action.triggered.connect(self._on_edit_scores)
+        project_settings_action = edit_menu.addAction("Project Settings…")
+        project_settings_action.triggered.connect(self._on_open_project_settings)
 
     # -- Signal wiring ------------------------------------------------------------
     def _wire_signals(self) -> None:
@@ -131,7 +128,7 @@ class MainWindow(QMainWindow):
         self.inspector_panel.delete_cut_requested.connect(self._on_delete_cut)
         self.inspector_panel.seek_to_cut_requested.connect(self._on_seek_to_cut)
         self.inspector_panel.set_annotated_requested.connect(self._on_set_annotated)
-        self.inspector_panel.edit_labels_requested.connect(self._on_edit_labels)
+        self.inspector_panel.edit_labels_requested.connect(lambda: self._on_open_project_settings("labels"))
         self.inspector_panel.navigate_requested.connect(self._on_navigate_requested)
 
     def _install_shortcuts(self) -> None:
@@ -361,20 +358,17 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"Video Annotation Tool — {self.project.config.project_dir}")
         app_settings.save_last_project_dir(self.project.config.project_dir)
 
-    def _on_edit_labels(self) -> None:
-        dialog = LabelEditorDialog(self.project, self)
+    def _on_open_project_settings(self, initial_tab: str = "labels") -> None:
+        dialog = ProjectSettingsDialog(self.project, self, initial_tab=initial_tab)
         dialog.exec()
+        # Labels and scores are both on this one dialog now, so refresh
+        # both regardless of which tab was opened -- either could have
+        # been edited during the same session.
         self.inspector_panel.set_labels(self.project.config.labels)
-        self._register_label_shortcuts()
-        if self._current_video_path:
-            self._refresh_cuts_and_status(self.project.rel_path(self._current_video_path))
-
-    def _on_edit_scores(self) -> None:
-        dialog = ScoreEditorDialog(self.project, self)
-        dialog.exec()
         self.inspector_panel.set_score_definitions(
             self.project.config.scoring_enabled, self.project.config.score_definitions
         )
+        self._register_label_shortcuts()
         if self._current_video_path:
             self._refresh_cuts_and_status(self.project.rel_path(self._current_video_path))
 

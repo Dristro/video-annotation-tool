@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
+    QWidget,
 )
 
 from vat.errors import DuplicateLabelError, LabelNotFoundError
@@ -62,19 +63,22 @@ class _LabelFormDialog(QDialog):
         )
 
 
-class LabelEditorDialog(QDialog):
+class _LabelsWidget(QWidget):
     """Add / remove / edit the project's label set, shown as a table of
     index / name / description / shortcut.
 
     Editing a label's name propagates the rename into every existing cut in
     the annotations file via Project.rename_label, per REQUIREMENT.md.
+
+    A plain QWidget (not QDialog) so it can be embedded both in the
+    standalone LabelEditorDialog below and as a tab in
+    ProjectSettingsDialog -- the table/CRUD logic is identical either way,
+    only the surrounding chrome (window title, Close button) differs.
     """
 
     def __init__(self, project: Project, parent=None):
         super().__init__(parent)
         self._project = project
-        self.setWindowTitle("Edit Labels")
-        self.resize(480, 340)
 
         layout = QVBoxLayout(self)
         self._table = QTableWidget(0, len(_COLUMNS))
@@ -101,11 +105,6 @@ class LabelEditorDialog(QDialog):
         remove_btn.clicked.connect(self._on_remove)
         btn_row.addWidget(remove_btn)
         layout.addLayout(btn_row)
-
-        close_buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        close_buttons.rejected.connect(self.accept)
-        close_buttons.accepted.connect(self.accept)
-        layout.addWidget(close_buttons)
 
         self._refresh()
 
@@ -202,3 +201,24 @@ class LabelEditorDialog(QDialog):
             return
         self._project.remove_labels(names)
         self._refresh()
+
+
+class LabelEditorDialog(QDialog):
+    """Standalone modal wrapper around _LabelsWidget -- just window chrome
+    (title, size, Close button) around the same table/CRUD content that
+    ProjectSettingsDialog embeds as its "Labels" tab.
+    """
+
+    def __init__(self, project: Project, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Edit Labels")
+        self.resize(480, 340)
+
+        layout = QVBoxLayout(self)
+        self.content = _LabelsWidget(project, self)
+        layout.addWidget(self.content)
+
+        close_buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        close_buttons.rejected.connect(self.accept)
+        close_buttons.accepted.connect(self.accept)
+        layout.addWidget(close_buttons)

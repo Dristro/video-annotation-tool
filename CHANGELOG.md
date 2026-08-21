@@ -5,6 +5,17 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added: single "Project Settings…" dialog for labels + scores
+
+- **Added**: `ProjectSettingsDialog` merges label and score management
+  into one tabbed dialog ("Labels" / "Scores"), replacing the separate
+  "Edit Labels…" / "Edit Scores…" menu items and dialogs.
+  `LabelEditorDialog`/`ScoreEditorDialog` still exist as standalone
+  wrappers (their table/CRUD logic was extracted into `_LabelsWidget`/
+  `_ScoresWidget`, embedded by both the standalone dialogs and the new
+  tabbed one) but are no longer wired into `MainWindow`'s menu.
+- 5 new tests (173 total).
+
 ### Added: score values on timeline hover tooltip
 
 - **Added**: hovering a cut on `TimelineWidget` now shows a tooltip with

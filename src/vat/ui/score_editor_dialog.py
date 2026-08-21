@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
+    QWidget,
 )
 
 from vat.errors import DuplicateScoreDefinitionError, ScoreDefinitionNotFoundError
@@ -90,19 +91,21 @@ class _ScoreFormDialog(QDialog):
         )
 
 
-class ScoreEditorDialog(QDialog):
+class _ScoresWidget(QWidget):
     """Enable/disable per-cut scoring for the project and manage the set of
     named score fields (each with its own range and dtype).
 
     Renaming a score propagates into every existing cut's scores dict via
     Project.rename_score_definition, mirroring label rename propagation.
+
+    A plain QWidget (not QDialog) so it can be embedded both in the
+    standalone ScoreEditorDialog below and as a tab in
+    ProjectSettingsDialog.
     """
 
     def __init__(self, project: Project, parent=None):
         super().__init__(parent)
         self._project = project
-        self.setWindowTitle("Edit Scores")
-        self.resize(560, 360)
 
         layout = QVBoxLayout(self)
 
@@ -136,11 +139,6 @@ class ScoreEditorDialog(QDialog):
         remove_btn.clicked.connect(self._on_remove)
         btn_row.addWidget(remove_btn)
         layout.addLayout(btn_row)
-
-        close_buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        close_buttons.rejected.connect(self.accept)
-        close_buttons.accepted.connect(self.accept)
-        layout.addWidget(close_buttons)
 
         self._refresh()
 
@@ -218,3 +216,24 @@ class ScoreEditorDialog(QDialog):
             return
         self._project.remove_score_definitions(names)
         self._refresh()
+
+
+class ScoreEditorDialog(QDialog):
+    """Standalone modal wrapper around _ScoresWidget -- just window chrome
+    (title, size, Close button) around the same table/CRUD content that
+    ProjectSettingsDialog embeds as its "Scores" tab.
+    """
+
+    def __init__(self, project: Project, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Edit Scores")
+        self.resize(560, 360)
+
+        layout = QVBoxLayout(self)
+        self.content = _ScoresWidget(project, self)
+        layout.addWidget(self.content)
+
+        close_buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        close_buttons.rejected.connect(self.accept)
+        close_buttons.accepted.connect(self.accept)
+        layout.addWidget(close_buttons)

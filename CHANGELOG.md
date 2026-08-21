@@ -5,6 +5,16 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added: direct tests for Preloader
+
+- **Added**: `Preloader` never touches libmpv (only `probe_duration()` and
+  a plain file read), so unlike `mpv_player.py` it's actually unit
+  testable — added coverage for the in-flight dedup behavior (a second
+  `preload()` call while one is running is a no-op, not queued), a
+  missing-file path not raising, and a new call being accepted once the
+  previous one finished.
+- 4 new tests (209 total).
+
 ### Added: "Open Recent" projects submenu
 
 - **Added**: File > Open Recent lists up to 8 previously-opened project

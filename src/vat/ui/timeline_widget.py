@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QRectF, Qt, Signal
-from PySide6.QtGui import QMouseEvent, QPainter, QPen
+from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPen
 from PySide6.QtWidgets import QToolTip, QWidget
 
 from vat.models.cut import Cut
@@ -12,6 +12,8 @@ TRACK_HEIGHT = 28
 TRACK_MARGIN_TOP = 12
 EDGE_GRAB_PX = 6  # how close a press has to be to a cut's start/end to grab it for resizing
 MIN_CUT_LENGTH_SECONDS = 0.1  # keeps a drag from collapsing a cut to zero/negative length live
+WAVEFORM_HEIGHT = 24
+WAVEFORM_MARGIN_TOP = TRACK_MARGIN_TOP + TRACK_HEIGHT + 6
 
 
 def _continuation_tag(cut: Cut) -> str:
@@ -48,10 +50,16 @@ class TimelineWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumHeight(TRACK_MARGIN_TOP + TRACK_HEIGHT + 12)
+        self.setMinimumHeight(WAVEFORM_MARGIN_TOP + WAVEFORM_HEIGHT + 12)
         self._duration: float = 0.0
         self._position: float = 0.0
         self._cuts: list[Cut] = []
+        # Peak amplitudes (0.0-1.0) evenly spanning the whole video,
+        # regardless of its length -- None means "no waveform to show yet"
+        # (still loading, extraction failed, or no video loaded), not "flat
+        # audio". Provided by MainWindow via WaveformLoader; this widget
+        # never touches ffmpeg/the filesystem itself.
+        self._waveform: list[float] | None = None
         # While the user is dragging, the position shown must track the
         # drag itself, not whatever mpv's async position observer reports
         # in the meantime (which lags slightly behind a seek and would
@@ -78,6 +86,10 @@ class TimelineWidget(QWidget):
 
     def set_cuts(self, cuts: list[Cut]) -> None:
         self._cuts = list(cuts)
+        self.update()
+
+    def set_waveform(self, peaks: list[float] | None) -> None:
+        self._waveform = peaks
         self.update()
 
     def _x_for_time(self, seconds: float) -> float:
@@ -126,10 +138,28 @@ class TimelineWidget(QWidget):
                     f"{prefix}{cut.label}{suffix}{_continuation_tag(cut)}",
                 )
 
+        self._paint_waveform(painter)
+
         if self._duration > 0:
             playhead_x = self._x_for_time(self._position)
             painter.setPen(QPen(Qt.GlobalColor.red, 2))
             painter.drawLine(int(playhead_x), 0, int(playhead_x), self.height())
+
+    def _paint_waveform(self, painter: QPainter) -> None:
+        waveform_rect = QRectF(2, WAVEFORM_MARGIN_TOP, max(1, self.width() - 4), WAVEFORM_HEIGHT)
+        painter.setPen(QPen(Qt.GlobalColor.darkGray))
+        painter.setBrush(Qt.GlobalColor.lightGray if self._waveform else QColor(0, 0, 0, 0))
+        painter.drawRoundedRect(waveform_rect, 3, 3)
+        if not self._waveform:
+            return
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(70, 90, 130))
+        center_y = WAVEFORM_MARGIN_TOP + WAVEFORM_HEIGHT / 2
+        bar_width = max(1.0, waveform_rect.width() / len(self._waveform))
+        for i, peak in enumerate(self._waveform):
+            bar_height = max(1.0, peak * (WAVEFORM_HEIGHT / 2))
+            x = waveform_rect.left() + i * bar_width
+            painter.drawRect(QRectF(x, center_y - bar_height, bar_width, bar_height * 2))
 
     def event(self, event) -> bool:  # noqa: N802 (Qt override)
         if event.type() == QEvent.Type.ToolTip:

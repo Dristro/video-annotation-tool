@@ -8,11 +8,12 @@ from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QFileDialog, QMainWindow, QMessageBox, QSplitter, QVBoxLayout, QWidget
 
 from vat import app_settings
-from vat.constants import THUMBNAILS_DIR_NAME
+from vat.constants import THUMBNAILS_DIR_NAME, WAVEFORMS_DIR_NAME
 from vat.errors import CutNotFoundError
 from vat.media.thumbnails import get_or_create_thumbnail
 from vat.media.video_scanner import probe_duration
 from vat.playback.preloader import Preloader
+from vat.playback.waveform_loader import WaveformLoader
 from vat.project.project import Project
 from vat.project.undo_stack import Command, UndoStack
 from vat.ui.inspector_panel import InspectorPanel
@@ -37,6 +38,8 @@ class MainWindow(QMainWindow):
         self.project = project
         self._current_video_path: str | None = None
         self._preloader = Preloader()
+        self._waveform_loader = WaveformLoader()
+        self._waveform_loader.loaded.connect(self._on_waveform_loaded)
         # Covers cut add/edit/delete only, not label/score renames --
         # those propagate across every video's cuts (rename_*_everywhere)
         # and would need a full before/after snapshot of every affected
@@ -229,9 +232,23 @@ class MainWindow(QMainWindow):
         if duration:
             self.timeline_widget.set_duration(duration)
 
+        # Clear immediately rather than leaving the previous video's
+        # waveform showing while the new one decodes in the background --
+        # set_waveform(None) also correctly re-draws an empty strip if
+        # this video's waveform was never generated at all.
+        self.timeline_widget.set_waveform(None)
+        waveforms_dir = os.path.join(self.project.config.project_dir, WAVEFORMS_DIR_NAME)
+        self._waveform_loader.load(path, waveforms_dir)
+
         next_path = self.playlist_panel.next_path()
         if next_path:
             self._preloader.preload(next_path)
+
+    def _on_waveform_loaded(self, video_path: str, peaks: list) -> None:
+        # Guards against a late result for a video the user has already
+        # navigated away from overwriting the *current* video's waveform.
+        if video_path == self._current_video_path:
+            self.timeline_widget.set_waveform(peaks or None)
 
     def _refresh_pending_continuation(self) -> None:
         """Check whether the previous video (by playlist order) left an

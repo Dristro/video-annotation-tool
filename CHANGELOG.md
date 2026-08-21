@@ -5,6 +5,24 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added: waveform preview under the timeline
+
+- **Added**: `TimelineWidget` now shows a waveform strip beneath the cuts
+  track. Peak amplitudes are decoded via `ffmpeg` (`media/waveform.py`,
+  downsampled to a fixed 400 buckets regardless of video length) and
+  cached to disk under `<project_dir>/.waveforms/`, same pattern as
+  thumbnails. Unlike thumbnail extraction, this runs on a background
+  thread (`playback/waveform_loader.py`, `WaveformLoader`) rather than the
+  main thread — decoding a whole audio track is slower than grabbing one
+  frame, and blocking the UI on it was judged too risky. Follows the same
+  async-signal pattern used throughout the codebase for mpv's observers: a
+  background thread only ever calls `.emit()`, and `MainWindow`'s
+  connected slot (which checks the emitted path still matches the
+  *current* video, so a late result for a video the user has already
+  navigated away from is ignored) runs on the main thread since Qt
+  auto-queues cross-thread signal delivery.
+- 12 new tests (253 total).
+
 ### Added: thumbnail previews in the playlist panel
 
 - **Added**: each playlist entry now shows a small thumbnail (extracted

@@ -232,6 +232,27 @@ def test_edge_grab_also_selects_the_cut(timeline):
     assert selected == [cut.id]
 
 
+def test_paints_without_error_with_waveform(timeline):
+    timeline.set_waveform([0.1, 0.5, 1.0, 0.2] * 20)
+    timeline.show()
+
+    timeline.repaint()  # must not raise
+
+
+def test_paints_without_error_with_no_waveform(timeline):
+    timeline.set_waveform(None)
+    timeline.show()
+
+    timeline.repaint()  # must not raise
+
+
+def test_set_waveform_stores_peaks(timeline):
+    peaks = [0.1, 0.2, 0.3]
+    timeline.set_waveform(peaks)
+
+    assert timeline._waveform == peaks
+
+
 def test_continuation_tag_empty_for_ordinary_cut():
     assert _continuation_tag(Cut(start=0.0, end=1.0)) == ""
 

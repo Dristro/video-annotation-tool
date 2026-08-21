@@ -17,7 +17,6 @@ promise of order — just so nothing gets silently lost. Move items to
 
 ## UI / UX polish (DaVinci-Resolve-likeness)
 
-- [ ] Waveform/audio preview under the timeline.
 - [ ] Undo/redo only covers cut add/edit/delete (`UndoStack` in
       `project/undo_stack.py`, wired in `MainWindow`), not label/score
       renames -- those propagate across every video's cuts via
@@ -63,7 +62,10 @@ promise of order — just so nothing gets silently lost. Move items to
       per video with no cached thumbnail) still blocks the UI -- fine for
       a handful of videos, could visibly stall opening a project with many
       uncached ones. Revisit (background thread, same pattern as
-      `Preloader`) if that's reported as sluggish.
+      `Preloader`) if that's reported as sluggish. (Waveform generation
+      *is* already backgrounded -- `playback/waveform_loader.py` -- since
+      a full audio-track decode is slower than a single thumbnail frame
+      grab and was judged too risky to ever run on the main thread.)
 
 ## Verification gaps
 

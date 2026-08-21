@@ -29,7 +29,10 @@ class ProjectStore:
         return Path(self.config.project_dir) / PROJECT_CONFIG_FILENAME
 
     @classmethod
-    def create(cls, project_dir: str, videos_dir: str, labels: list[Label] | None = None) -> "ProjectStore":
+    def create(
+        cls, project_dir: str, videos_dir: str, labels: list[Label] | None = None,
+        scoring_enabled: bool = False, score_definitions: list[ScoreDefinition] | None = None,
+    ) -> "ProjectStore":
         project_path = Path(project_dir)
         if (project_path / PROJECT_CONFIG_FILENAME).exists():
             raise ProjectAlreadyExistsError(f"A project already exists at {project_dir}")
@@ -38,6 +41,8 @@ class ProjectStore:
             project_dir=str(project_path.resolve()),
             videos_dir=str(Path(videos_dir).resolve()),
             labels=list(labels or []),
+            scoring_enabled=scoring_enabled,
+            score_definitions=list(score_definitions or []),
         )
         store = cls(config)
         store.save()

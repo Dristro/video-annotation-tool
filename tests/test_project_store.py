@@ -11,6 +11,7 @@ from vat.errors import (
     ScoreDefinitionNotFoundError,
 )
 from vat.models.label import Label
+from vat.models.score_definition import ScoreDefinition
 from vat.project.project_store import ProjectStore
 
 
@@ -29,6 +30,20 @@ def test_create_twice_raises(tmp_project_dir, tmp_videos_dir):
 def test_load_missing_raises(tmp_project_dir):
     with pytest.raises(ProjectNotFoundError):
         ProjectStore.load(tmp_project_dir)
+
+
+def test_create_with_initial_scoring_enabled_and_definitions(tmp_project_dir, tmp_videos_dir):
+    store = ProjectStore.create(
+        tmp_project_dir, tmp_videos_dir,
+        scoring_enabled=True,
+        score_definitions=[ScoreDefinition(name="Technique", minimum=0, maximum=100)],
+    )
+    assert store.config.scoring_enabled is True
+    assert store.config.score_definition_names() == ["Technique"]
+
+    reloaded = ProjectStore.load(tmp_project_dir)
+    assert reloaded.config.scoring_enabled is True
+    assert reloaded.config.score_definition_names() == ["Technique"]
 
 
 def test_load_round_trips_labels(tmp_project_dir, tmp_videos_dir):

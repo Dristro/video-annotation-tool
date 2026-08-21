@@ -23,8 +23,11 @@ class Project:
 
     # -- Lifecycle ------------------------------------------------------------
     @classmethod
-    def create(cls, project_dir: str, videos_dir: str, labels: list[Label] | None = None) -> "Project":
-        project_store = ProjectStore.create(project_dir, videos_dir, labels)
+    def create(
+        cls, project_dir: str, videos_dir: str, labels: list[Label] | None = None,
+        scoring_enabled: bool = False, score_definitions: list[ScoreDefinition] | None = None,
+    ) -> "Project":
+        project_store = ProjectStore.create(project_dir, videos_dir, labels, scoring_enabled, score_definitions)
         annotation_store = AnnotationStore.create(project_store.config.project_dir)
         return cls(project_store, annotation_store)
 

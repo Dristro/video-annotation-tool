@@ -31,11 +31,6 @@ promise of order — just so nothing gets silently lost. Move items to
 
 ## Scores follow-ups
 
-- [ ] `NewProjectDialog` (the project-creation wizard) only lets you set
-      initial labels, not initial score definitions or enable scoring --
-      scoring can only be configured *after* creating the project, via
-      **Edit > Edit Scores…**. Fully functional, just an inconsistency
-      with how labels are handled at creation time.
 - [ ] Score values aren't shown anywhere on the timeline visualization
       (only in the inspector's cuts list text, e.g. "Technique=87.5,
       Confidence=4"). Could add as a tooltip on hover.

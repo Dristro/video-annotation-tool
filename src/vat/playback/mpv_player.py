@@ -169,6 +169,12 @@ class MpvPlayer:
         mode = "relative" if relative else "absolute"
         self._mpv.seek(seconds, mode)
 
+    def set_speed(self, speed: float) -> None:
+        # A discrete, user-driven property set (dragging the speed slider),
+        # same category as set_paused()/seek() above -- not a recurring
+        # poll, so it doesn't carry the deadlock risk documented below.
+        self._mpv.speed = speed
+
     # -- Async observers ---------------------------------------------------
     # Deliberately no synchronous position/duration/pause *getters* here.
     # python-mpv's observe_property callbacks fire on its own background

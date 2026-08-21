@@ -304,6 +304,32 @@ explicitly pressed "mark annotated". Adding cuts alone does not flip
 `annotated` to `True` — that requires the explicit confirm action. Both
 `AnnotationStore` and the test suite encode this distinction; preserve it.
 
+### VideoPanel's transport row: fixed-width play button, notched speed slider
+
+- The Play/Pause `QPushButton` is sized once at construction, via
+  `QFontMetrics.horizontalAdvance()` on both "Play" and "Pause" (+
+  padding), then `setFixedWidth()`'d to that. Without this, the button
+  (and everything after it in the row) visibly resized/shifted on every
+  toggle, since the two labels aren't the same width -- reported as a
+  bug. If you ever change the button's label text, remeasure both
+  strings again rather than hardcoding a width.
+- Playback speed is a **notched** `QSlider` -- integer range over indices
+  into `SPEED_STEPS` (`ui/video_panel.py`), not a continuous range mapped
+  to float speeds. This is deliberate: an integer-range `QSlider` can only
+  land on whole index values, so "notched" (snaps to a fixed step) falls
+  out for free rather than needing custom snapping logic. `MpvPlayer
+  .set_speed()` is a discrete, user-driven property set (dragging the
+  slider) -- same category as `set_paused()`/`seek()`, not a recurring
+  poll, so it's not subject to the deadlock risk documented above for
+  synchronous getters called from a timer.
+- Speed persists across videos on purpose (one `MpvPlayer` core instance
+  lives for the whole session, and mpv's `speed` property isn't
+  per-file) -- if the user sets 0.5x, it stays 0.5x for the next video
+  too, matching how most media players behave. `_ensure_player()`
+  explicitly re-applies the slider's current value to a freshly
+  constructed player instead of letting it silently revert to mpv's own
+  default, in case a fresh core is ever created mid-session.
+
 ### TimelineWidget is the *only* scrub control
 
 `VideoPanel` used to also have its own `QSlider` for scrubbing, stacked

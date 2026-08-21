@@ -5,6 +5,25 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added/Fixed: playback speed control, play/pause button resize bug
+(REQUIREMENT.md #12, `main` only)
+
+- **Fixed**: the Play/Pause button visibly resized (shifting everything
+  else in the transport row) every time playback toggled, since "Play"
+  and "Pause" aren't the same width. Now sized once via `QFontMetrics` to
+  fit whichever is wider.
+- **Added**: a notched playback speed slider (0.25x-2x, `SPEED_STEPS` in
+  `ui/video_panel.py`), placed inline with the play/pause button and
+  elapsed-time display, at the right-hand end of that row. An integer
+  `QSlider` over step indices rather than a continuous range, so it can
+  only ever land on one of the defined speeds. `MpvPlayer.set_speed()`
+  added as a discrete, user-driven property set (same category as
+  existing seek/pause controls, not a recurring poll). Speed persists
+  across videos within a session, matching typical media player behavior.
+- 11 new tests (152 total): `format_time`, fixed-width button sizing
+  (including across repeated toggles), and the speed slider's default/
+  range/label-update/no-player-safety behavior.
+
 ### Added: cross-video continuing annotations (REQUIREMENT.md #11, `main`
 only)
 

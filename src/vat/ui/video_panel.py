@@ -1,9 +1,15 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget
 
 from vat.playback.mpv_player import MpvPlayer, VideoSurface
+
+# Discrete playback speed steps for the notched speed slider -- a QSlider
+# over these indices rather than a continuous range, so it only ever lands
+# on one of these values (no arbitrary in-between speeds).
+SPEED_STEPS = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
+DEFAULT_SPEED_INDEX = SPEED_STEPS.index(1.0)
 
 
 def format_time(seconds: float) -> str:
@@ -58,12 +64,36 @@ class VideoPanel(QWidget):
         layout.addWidget(self._surface, stretch=1)
 
         controls = QHBoxLayout()
+
         self._play_btn = QPushButton("Play")
         self._play_btn.clicked.connect(self.toggle_pause)
+        # "Play" and "Pause" are different widths -- without a fixed width
+        # the button visibly resizes (and everything else in the row
+        # shifts) every time playback toggles. Size it once, to fit
+        # whichever label is wider, padded for the button's own chrome.
+        metrics = self._play_btn.fontMetrics()
+        button_width = max(metrics.horizontalAdvance("Play"), metrics.horizontalAdvance("Pause")) + 24
+        self._play_btn.setFixedWidth(button_width)
         controls.addWidget(self._play_btn)
 
         self._time_label = QLabel("0:00 / 0:00")
         controls.addWidget(self._time_label, stretch=1)
+
+        # Playback speed: a notched (discrete-step) slider rather than a
+        # continuous one, so it only ever lands on one of SPEED_STEPS.
+        self._speed_label = QLabel("1.0x")
+        controls.addWidget(self._speed_label)
+        self._speed_slider = QSlider(Qt.Orientation.Horizontal)
+        self._speed_slider.setRange(0, len(SPEED_STEPS) - 1)
+        self._speed_slider.setValue(DEFAULT_SPEED_INDEX)
+        self._speed_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self._speed_slider.setTickInterval(1)
+        self._speed_slider.setSingleStep(1)
+        self._speed_slider.setPageStep(1)
+        self._speed_slider.setFixedWidth(120)
+        self._speed_slider.setToolTip("Playback speed")
+        self._speed_slider.valueChanged.connect(self._on_speed_index_changed)
+        controls.addWidget(self._speed_slider)
 
         layout.addLayout(controls)
 
@@ -80,6 +110,10 @@ class VideoPanel(QWidget):
             self._player.observe_position(self.position_changed.emit)
             self._player.observe_duration(self.duration_changed.emit)
             self._player.observe_pause(self.pause_changed.emit)
+            # The slider may already be off 1x (e.g. left that way from a
+            # previous video) -- apply it to this freshly-created player
+            # instead of silently reverting to mpv's own default speed.
+            self._player.set_speed(SPEED_STEPS[self._speed_slider.value()])
         return self._player
 
     def load(self, path: str) -> None:
@@ -112,6 +146,12 @@ class VideoPanel(QWidget):
         if self._player:
             self._player.shutdown()
             self._player = None
+
+    def _on_speed_index_changed(self, index: int) -> None:
+        speed = SPEED_STEPS[index]
+        self._speed_label.setText(f"{speed:g}x")
+        if self._player:
+            self._player.set_speed(speed)
 
     def _handle_position(self, value: float) -> None:
         self._position = value

@@ -54,6 +54,10 @@ time.
     matching annotation (same label/scores, pre-filled) beginning at 0:00, which the user
     finishes by marking where it actually ends. The two halves are linked, not independent --
     but nothing is enforced or auto-created without the user opting in on each end.
+12. Playback speed control: a notched (discrete-step) speed slider, placed inline with the
+    play/pause button and the elapsed-time display, lets the user change playback speed (e.g.
+    0.25x-2x) while reviewing a video. Snaps to a fixed set of speed steps rather than an
+    arbitrary continuous value.
 
 
 ## Non-functional requirements

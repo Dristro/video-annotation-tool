@@ -100,8 +100,6 @@ promise of order — just so nothing gets silently lost. Move items to
       offscreen/headless window segfaults (see `CLAUDE.md`). Covered only
       indirectly via manual runs. (`playback/preloader.py` now has direct
       tests — it never touches libmpv, only `probe_duration()`/file I/O.)
-- [ ] No CI workflow configured yet (e.g. GitHub Actions running `pytest`
-      on push).
 
 ## Explicitly out of scope (per REQUIREMENT.md)
 

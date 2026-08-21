@@ -5,6 +5,15 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added: GitHub Actions CI running pytest
+
+- **Added**: `.github/workflows/tests.yml` runs the full `pytest` suite on
+  push to `main`/`stable` and on pull requests. Runs on a `macos-latest`
+  runner (not Linux) with `brew install mpv ffmpeg`, since `vat.ui.*`
+  modules import `mpv_player.py` transitively (even though no test ever
+  constructs a real `MpvPlayer`), so libmpv has to be loadable just for
+  the suite to collect.
+
 ### Added: direct tests for Preloader
 
 - **Added**: `Preloader` never touches libmpv (only `probe_duration()` and

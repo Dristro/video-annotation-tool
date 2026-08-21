@@ -22,6 +22,35 @@ def test_full_annotation_lifecycle(tmp_project_dir, tmp_videos_dir):
     assert project.is_annotated(rel) is True
 
 
+def test_pending_continuations_returns_all_uncompleted_ones(tmp_project_dir, tmp_videos_dir):
+    project = _make_project(tmp_project_dir, tmp_videos_dir)
+    project.add_cut("a.mp4", 100.0, 110.0, "goal", continuation_id="link1", continues_forward=True)
+    project.add_cut("a.mp4", 200.0, 210.0, "foul", continuation_id="link2", continues_forward=True)
+
+    pending = project.pending_continuations("b.mp4", "a.mp4")
+
+    assert {c.continuation_id for c in pending} == {"link1", "link2"}
+
+
+def test_pending_continuations_excludes_completed_ones(tmp_project_dir, tmp_videos_dir):
+    project = _make_project(tmp_project_dir, tmp_videos_dir)
+    project.add_cut("a.mp4", 100.0, 110.0, "goal", continuation_id="link1", continues_forward=True)
+    project.add_cut("a.mp4", 200.0, 210.0, "foul", continuation_id="link2", continues_forward=True)
+    project.add_cut("b.mp4", 0.0, 5.0, "goal", continuation_id="link1", continues_forward=False)
+
+    pending = project.pending_continuations("b.mp4", "a.mp4")
+
+    assert [c.continuation_id for c in pending] == ["link2"]
+
+
+def test_pending_continuation_returns_first_of_several(tmp_project_dir, tmp_videos_dir):
+    project = _make_project(tmp_project_dir, tmp_videos_dir)
+    project.add_cut("a.mp4", 100.0, 110.0, "goal", continuation_id="link1", continues_forward=True)
+    project.add_cut("a.mp4", 200.0, 210.0, "foul", continuation_id="link2", continues_forward=True)
+
+    assert project.pending_continuation("b.mp4", "a.mp4").continuation_id == "link1"
+
+
 def test_overlapping_cuts_detects_overlap(tmp_project_dir, tmp_videos_dir):
     project = _make_project(tmp_project_dir, tmp_videos_dir)
     rel = project.rel_path(project.list_videos()[0].path)

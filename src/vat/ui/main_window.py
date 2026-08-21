@@ -211,13 +211,13 @@ class MainWindow(QMainWindow):
         checkbox when there's no next video to continue into.
         """
         if self._current_video_path is None:
-            self.inspector_panel.set_pending_continuation(None)
+            self.inspector_panel.set_pending_continuations([])
             return
         rel = self.project.rel_path(self._current_video_path)
         previous_path = self.playlist_panel.previous_path()
         previous_rel = self.project.rel_path(previous_path) if previous_path else None
-        pending = self.project.pending_continuation(rel, previous_rel)
-        self.inspector_panel.set_pending_continuation(pending)
+        pending = self.project.pending_continuations(rel, previous_rel)
+        self.inspector_panel.set_pending_continuations(pending)
         self.inspector_panel.set_continuation_allowed(self.playlist_panel.next_path() is not None)
 
     def _refresh_cuts_and_status(self, rel: str) -> None:

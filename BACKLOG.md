@@ -38,12 +38,6 @@ promise of order — just so nothing gets silently lost. Move items to
       *starting* a new one is still only possible at creation time via the
       checkbox/banner, and there's no way to re-link a cut to a
       *different* other cut once broken (only delete + re-add).
-- [ ] If a video somehow has *more than one* pending continuation from the
-      previous video (unusual, but the data model doesn't prevent it),
-      `pending_continuation()` only surfaces the first one found; the
-      others stay silently uncompletable via the banner (still doable
-      manually by setting the same continuation_id, just not through the
-      UI).
 - [ ] No visual distinction on the timeline for *which* other cut a →/←
       marker links to -- with several continuing cuts in a project it's
       not obvious which pairs go together beyond matching labels/timing

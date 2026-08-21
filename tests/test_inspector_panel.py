@@ -55,6 +55,52 @@ def test_pending_continuation_banner_shows_and_hides(panel):
     assert panel._continuation_banner_label.text() == "" or panel._pending_continuation_cut is None
 
 
+def test_set_pending_continuations_single_hides_next_button(panel):
+    cut = Cut(start=280.0, end=300.0, label="goal", continuation_id="link1", continues_forward=True)
+    panel.set_pending_continuations([cut])
+
+    assert panel._next_continuation_btn.isHidden() is True
+    assert "goal" in panel._continuation_banner_label.text()
+    assert "(" not in panel._continuation_banner_label.text()  # no "(1/2)"-style count for a single one
+
+
+def test_set_pending_continuations_multiple_shows_next_button_and_count(panel):
+    a = Cut(start=100.0, end=110.0, label="goal", continuation_id="link1", continues_forward=True)
+    b = Cut(start=200.0, end=210.0, label="foul", continuation_id="link2", continues_forward=True)
+    panel.set_pending_continuations([a, b])
+
+    assert panel._next_continuation_btn.isHidden() is False
+    assert "goal" in panel._continuation_banner_label.text()
+    assert "(1/2)" in panel._continuation_banner_label.text()
+
+
+def test_next_continuation_cycles_and_wraps(panel):
+    a = Cut(start=100.0, end=110.0, label="goal", continuation_id="link1", continues_forward=True)
+    b = Cut(start=200.0, end=210.0, label="foul", continuation_id="link2", continues_forward=True)
+    panel.set_pending_continuations([a, b])
+
+    panel._on_next_continuation()
+    assert "foul" in panel._continuation_banner_label.text()
+    assert "(2/2)" in panel._continuation_banner_label.text()
+
+    panel._on_next_continuation()  # wraps back to the first
+    assert "goal" in panel._continuation_banner_label.text()
+    assert "(1/2)" in panel._continuation_banner_label.text()
+
+
+def test_start_here_acts_on_whichever_continuation_is_currently_shown(panel):
+    a = Cut(start=100.0, end=110.0, label="goal", continuation_id="link1", continues_forward=True)
+    b = Cut(start=200.0, end=210.0, label="foul", continuation_id="link2", continues_forward=True)
+    panel.set_labels([Label(name="goal", shortcut="g"), Label(name="foul", shortcut="f")])
+    panel.set_pending_continuations([a, b])
+    panel._on_next_continuation()
+
+    panel._on_start_continuation()
+
+    assert panel.selected_label_name() == "foul"
+    assert panel.completing_continuation_id() == "link2"
+
+
 def test_start_here_prefills_label_scores_and_mark_in(panel):
     panel.set_score_definitions(True, [ScoreDefinition(name="Technique", minimum=0, maximum=100)])
     panel.set_labels([Label(name="goal", shortcut="g")])

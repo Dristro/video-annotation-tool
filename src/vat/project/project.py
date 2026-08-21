@@ -120,25 +120,38 @@ class Project:
         ]
 
     def pending_continuation(self, rel_path: str, previous_rel_path: str | None) -> Cut | None:
-        """If the previous video (by playlist order) has a cut marked
+        """The first uncompleted continuation left by the previous video,
+        or None. Convenience wrapper around pending_continuations() for
+        the common case (at most one) -- see its docstring for the actual
+        matching logic. Kept as its own method since it's the one most
+        callers/tests want; still one hop, no chain walking.
+        """
+        matches = self.pending_continuations(rel_path, previous_rel_path)
+        return matches[0] if matches else None
+
+    def pending_continuations(self, rel_path: str, previous_rel_path: str | None) -> list[Cut]:
+        """Every cut in the previous video (by playlist order) marked
         `continues_forward` that this video hasn't yet completed with a
-        matching `continuation_id`, return that front-half cut so the UI
-        can offer to complete it. None otherwise (no previous video, no
-        pending continuation, or it's already been completed).
+        matching `continuation_id`, so the UI can offer to complete any of
+        them. Normally at most one, but the data model doesn't prevent a
+        video from leaving more than one uncompleted continuation
+        (BACKLOG.md) -- this only ever looks one hop backward, same as
+        pending_continuation(); it does not walk a chain.
         """
         if not previous_rel_path:
-            return None
+            return []
         previous_entry = self.get_entry(previous_rel_path)
         if previous_entry is None:
-            return None
+            return []
         current_entry = self.get_entry(rel_path)
         completed_ids = {
             c.continuation_id for c in (current_entry.cuts if current_entry else []) if c.continuation_id
         }
-        for cut in previous_entry.cuts:
-            if cut.continues_forward and cut.continuation_id and cut.continuation_id not in completed_ids:
-                return cut
-        return None
+        return [
+            cut
+            for cut in previous_entry.cuts
+            if cut.continues_forward and cut.continuation_id and cut.continuation_id not in completed_ids
+        ]
 
     # -- Labels ------------------------------------------------------------
     def add_label(self, name: str, shortcut: str = "", description: str = "") -> Label:

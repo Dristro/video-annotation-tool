@@ -5,6 +5,18 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added: handle more than one pending continuation from the previous video
+
+- **Added**: `Project.pending_continuations()` (new, plural) returns every
+  uncompleted `continues_forward` cut left by the previous video, not just
+  the first — the data model never prevented more than one, but the UI
+  only ever surfaced one. `pending_continuation()` (singular) is now a
+  thin wrapper returning the first match, kept for the common case. The
+  inspector's continuation banner shows a "Next" button (with a "(i/N)"
+  count) when there's more than one, and "Start Here" acts on whichever
+  one is currently shown.
+- 9 new tests (193 total).
+
 ### Added: break a cut's continuation link
 
 - **Added**: selecting a cut that has a continuation link (either half)

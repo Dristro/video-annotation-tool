@@ -68,7 +68,8 @@ class InspectorPanel(QWidget):
         self._score_definitions: list[ScoreDefinition] = []
         self._score_inputs: dict[str, TransportLineEdit] = {}
         self._scoring_enabled = False
-        self._pending_continuation_cut: Cut | None = None
+        self._pending_continuation_cuts: list[Cut] = []
+        self._pending_continuation_index: int = 0
         self._completing_continuation_id: str | None = None
 
         layout = QVBoxLayout(self)
@@ -88,6 +89,13 @@ class InspectorPanel(QWidget):
         self._continuation_banner_label = QLabel("")
         self._continuation_banner_label.setWordWrap(True)
         banner_layout.addWidget(self._continuation_banner_label, stretch=1)
+        # Only shown when the previous video left more than one uncompleted
+        # continuation (unusual, but the data model doesn't prevent it --
+        # BACKLOG.md) -- cycles which one "Start Here" acts on.
+        self._next_continuation_btn = QPushButton("Next")
+        self._next_continuation_btn.clicked.connect(self._on_next_continuation)
+        self._next_continuation_btn.setVisible(False)
+        banner_layout.addWidget(self._next_continuation_btn)
         start_here_btn = QPushButton("Start Here")
         start_here_btn.clicked.connect(self._on_start_continuation)
         banner_layout.addWidget(start_here_btn)
@@ -265,17 +273,50 @@ class InspectorPanel(QWidget):
             self._continues_checkbox.setChecked(False)
 
     def set_pending_continuation(self, cut: Cut | None) -> None:
-        """Show/hide the "continuing from previous video" banner. `cut` is
-        the front-half cut left uncompleted by the previous video, or None
-        if there's nothing to complete for the current video.
+        """Single-cut convenience form of set_pending_continuations() --
+        equivalent to passing a one-item or empty list.
         """
-        self._pending_continuation_cut = cut
+        self.set_pending_continuations([cut] if cut is not None else [])
+
+    def set_pending_continuations(self, cuts: list[Cut]) -> None:
+        """Show/hide the "continuing from previous video" banner. `cuts`
+        are the front-half cuts left uncompleted by the previous video --
+        normally at most one, but the data model doesn't prevent more
+        (BACKLOG.md); a "Next" button appears to cycle through them when
+        there's more than one. Empty means nothing to complete.
+        """
+        self._pending_continuation_cuts = list(cuts)
+        self._pending_continuation_index = 0
+        self._refresh_continuation_banner()
+
+    @property
+    def _pending_continuation_cut(self) -> Cut | None:
+        """Whichever pending continuation is currently shown in the
+        banner (the one "Start Here" acts on) -- index 0 unless "Next"
+        has been clicked.
+        """
+        if 0 <= self._pending_continuation_index < len(self._pending_continuation_cuts):
+            return self._pending_continuation_cuts[self._pending_continuation_index]
+        return None
+
+    def _refresh_continuation_banner(self) -> None:
+        cut = self._pending_continuation_cut
         if cut is None:
             self._continuation_banner.setVisible(False)
             return
         label_part = f" '{cut.label}'" if cut.label else ""
-        self._continuation_banner_label.setText(f"⚠ Continuing{label_part} from previous video")
+        total = len(self._pending_continuation_cuts)
+        count_part = f" ({self._pending_continuation_index + 1}/{total})" if total > 1 else ""
+        self._continuation_banner_label.setText(f"⚠ Continuing{label_part} from previous video{count_part}")
+        self._next_continuation_btn.setVisible(total > 1)
         self._continuation_banner.setVisible(True)
+
+    def _on_next_continuation(self) -> None:
+        total = len(self._pending_continuation_cuts)
+        if total <= 1:
+            return
+        self._pending_continuation_index = (self._pending_continuation_index + 1) % total
+        self._refresh_continuation_banner()
 
     def wants_continues_forward(self) -> bool:
         return self._continues_checkbox.isChecked()

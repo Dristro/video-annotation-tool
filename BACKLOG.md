@@ -17,8 +17,6 @@ promise of order — just so nothing gets silently lost. Move items to
 
 ## UI / UX polish (DaVinci-Resolve-likeness)
 
-- [ ] Thumbnail previews in the playlist panel (currently text + a
-      colored ●/○ annotated marker only).
 - [ ] Waveform/audio preview under the timeline.
 - [ ] Undo/redo only covers cut add/edit/delete (`UndoStack` in
       `project/undo_stack.py`, wired in `MainWindow`), not label/score
@@ -59,6 +57,13 @@ promise of order — just so nothing gets silently lost. Move items to
       rendering region" requirement is satisfied by mpv's own bounded
       demuxer readahead rather than explicit chunked loading logic in our
       code. Revisit if real-world stutter is observed on large files.
+- [ ] `refresh_playlist()`'s thumbnail generation (`media/thumbnails.py`)
+      runs synchronously on the main thread and is disk-cached after the
+      first call per video, but that *first* call (one `ffmpeg` subprocess
+      per video with no cached thumbnail) still blocks the UI -- fine for
+      a handful of videos, could visibly stall opening a project with many
+      uncached ones. Revisit (background thread, same pattern as
+      `Preloader`) if that's reported as sluggish.
 
 ## Verification gaps
 

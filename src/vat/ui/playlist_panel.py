@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import QAbstractItemView, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget
 
 from vat.media.video_scanner import VideoInfo
 
 ANNOTATED_COLOR = QColor("#3cb44b")
 NOT_ANNOTATED_COLOR = QColor("#8a8a8a")
+THUMBNAIL_ICON_SIZE = QSize(80, 45)  # 16:9, matches media.thumbnails.THUMBNAIL_WIDTH's aspect roughly
 
 
 class PlaylistPanel(QWidget):
@@ -34,13 +35,16 @@ class PlaylistPanel(QWidget):
 
         self._list = QListWidget()
         self._list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self._list.setIconSize(THUMBNAIL_ICON_SIZE)
         self._list.currentRowChanged.connect(self._on_row_changed)
         layout.addWidget(self._list)
 
     def set_videos(
-        self, videos: list[VideoInfo], annotated_flags: dict[str, bool], cut_counts: dict[str, int] | None = None
+        self, videos: list[VideoInfo], annotated_flags: dict[str, bool], cut_counts: dict[str, int] | None = None,
+        thumbnails: dict[str, str] | None = None,
     ) -> None:
         cut_counts = cut_counts or {}
+        thumbnails = thumbnails or {}
         current_path = self.current_path()
         self._list.blockSignals(True)
         self._list.clear()
@@ -53,6 +57,9 @@ class PlaylistPanel(QWidget):
             count_part = f"  ({count})" if count else ""
             item = QListWidgetItem(f"{marker}  {video.rel_path}{count_part}")
             item.setForeground(ANNOTATED_COLOR if annotated else NOT_ANNOTATED_COLOR)
+            thumbnail_path = thumbnails.get(video.rel_path)
+            if thumbnail_path:
+                item.setIcon(QIcon(thumbnail_path))
             self._list.addItem(item)
             self._paths_by_row.append(video.path)
             if video.path == current_path:

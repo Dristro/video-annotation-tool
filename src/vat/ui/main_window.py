@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import uuid
 
 from PySide6.QtCore import Qt, QTimer
@@ -7,7 +8,9 @@ from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QFileDialog, QMainWindow, QMessageBox, QSplitter, QVBoxLayout, QWidget
 
 from vat import app_settings
+from vat.constants import THUMBNAILS_DIR_NAME
 from vat.errors import CutNotFoundError
+from vat.media.thumbnails import get_or_create_thumbnail
 from vat.media.video_scanner import probe_duration
 from vat.playback.preloader import Preloader
 from vat.project.project import Project
@@ -198,11 +201,20 @@ class MainWindow(QMainWindow):
         videos = self.project.list_videos()
         annotated_flags = {v.rel_path: self.project.is_annotated(v.rel_path) for v in videos}
         cut_counts = {}
+        thumbnails = {}
+        thumbnails_dir = os.path.join(self.project.config.project_dir, THUMBNAILS_DIR_NAME)
         for v in videos:
             entry = self.project.get_entry(v.rel_path)
             if entry:
                 cut_counts[v.rel_path] = len(entry.cuts)
-        self.playlist_panel.set_videos(videos, annotated_flags, cut_counts)
+            # Cached on disk after the first call (media.thumbnails), so
+            # this is only slow the first time each video is seen -- same
+            # best-effort spirit as Preloader; None (extraction failed) is
+            # simply omitted rather than treated as an error.
+            thumbnail_path = get_or_create_thumbnail(v.path, thumbnails_dir)
+            if thumbnail_path:
+                thumbnails[v.rel_path] = thumbnail_path
+        self.playlist_panel.set_videos(videos, annotated_flags, cut_counts, thumbnails)
 
     def _on_video_selected(self, path: str) -> None:
         self._current_video_path = path

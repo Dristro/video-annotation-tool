@@ -5,6 +5,20 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added: thumbnail previews in the playlist panel
+
+- **Added**: each playlist entry now shows a small thumbnail (extracted
+  via `ffmpeg` at the 1s mark, `media/thumbnails.py`) next to its
+  ●/○ marker, instead of text only. Cached to disk under
+  `<project_dir>/.thumbnails/` keyed by the video's resolved path, so
+  extraction only happens once per video — later `refresh_playlist()`
+  calls just check the cache file exists. Extraction runs synchronously
+  and best-effort (a failure or missing `ffmpeg` just omits the
+  thumbnail, same spirit as `Preloader`) — see `BACKLOG.md` if generating
+  many uncached thumbnails at once turns out to be slow enough to move to
+  a background thread.
+- 6 new tests (243 total).
+
 ### Added: drag-to-resize cut edges on the timeline
 
 - **Added**: pressing within 6px of a cut's start or end edge on

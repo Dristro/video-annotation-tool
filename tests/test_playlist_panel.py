@@ -2,6 +2,7 @@ import pytest
 
 pytest.importorskip("PySide6")
 
+from PySide6.QtGui import QPixmap  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from vat.media.video_scanner import VideoInfo  # noqa: E402
@@ -33,6 +34,23 @@ def test_annotation_count_omitted_when_missing(qapp):
     panel = PlaylistPanel()
     panel.set_videos(_videos("a.mp4"), {})  # no cut_counts arg at all
     assert "(" not in panel._list.item(0).text()
+
+
+def test_thumbnail_icon_set_when_provided(qapp, tmp_path):
+    thumb_path = tmp_path / "thumb.jpg"
+    QPixmap(4, 4).save(str(thumb_path), "JPG")
+
+    panel = PlaylistPanel()
+    panel.set_videos(_videos("a.mp4"), {}, thumbnails={"a.mp4": str(thumb_path)})
+
+    assert panel._list.item(0).icon().isNull() is False
+
+
+def test_no_thumbnail_icon_when_missing(qapp):
+    panel = PlaylistPanel()
+    panel.set_videos(_videos("a.mp4"), {})
+
+    assert panel._list.item(0).icon().isNull() is True
 
 
 def test_select_relative_steps_through_list(qapp):

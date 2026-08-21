@@ -304,6 +304,71 @@ explicitly pressed "mark annotated". Adding cuts alone does not flip
 `annotated` to `True` — that requires the explicit confirm action. Both
 `AnnotationStore` and the test suite encode this distinction; preserve it.
 
+### TimelineWidget is the *only* scrub control
+
+`VideoPanel` used to also have its own `QSlider` for scrubbing, stacked
+right above `TimelineWidget` -- two different circular-handle widgets
+doing the same job (reported as confusing; removed). `TimelineWidget` now
+owns dragging entirely:
+
+- `mousePressEvent`/`mouseMoveEvent`/`mouseReleaseEvent` implement
+  press-and-drag scrubbing directly (no `setMouseTracking` needed -- Qt
+  delivers move events while a button is held without it).
+- `self._dragging` guards `set_position()`: while `True`, external calls
+  (i.e. mpv's async position observer, arriving via
+  `VideoPanel.position_changed` -> `TimelineWidget.set_position`) are
+  ignored, so the playhead doesn't jitter/fight the mouse from a seek's
+  round-trip lag. The drag's own `_seek_to_x()` updates `self._position`
+  directly (bypassing that guard, since it's the source of truth during a
+  drag) and repaints immediately, so the visual stays smooth regardless of
+  when mpv's actual position catches up.
+- `mouseDoubleClickEvent` on a cut emits `cut_double_clicked`, wired in
+  `MainWindow._on_timeline_cut_double_clicked` to *both* select the cut
+  (loads it into the inspector for editing, same as a single click) *and*
+  seek playback to its start -- "edit it live," per the request that added
+  this. Note Qt's actual event sequence for a double click is press ->
+  release -> **doubleclick** -> release, not two presses, so the first
+  click's own selection/seek already happened via `mousePressEvent` before
+  `cut_double_clicked` fires -- the double-click handler's actions are
+  intentionally redundant with that, not a replacement for it.
+- Cut label text color is computed via `utils.colors.contrasting_text_color()`
+  (YIQ luminance) rather than hardcoded white -- several palette colors
+  (e.g. `#bcf60c`, `#fabebe`) are light enough that white text was
+  reported as hard to read.
+
+### TransportLineEdit: keeping transport shortcuts alive from a text field
+
+A `QLineEdit`-focused score input silently swallows plain Left/Right/Up/
+Down for in-field cursor movement before those key presses ever reach
+`QShortcut` dispatch -- no `ShortcutContext` setting fixes this, since
+it's the focused widget's own `keyPressEvent` claiming the key, not a
+shortcut-routing question. Reported as a real bug (arrow keys going dead
+once a score field had focus). Fixed in `ui/widgets.py`:
+`TransportLineEdit` intercepts plain (unmodified) arrow keys in its own
+`keyPressEvent` *before* calling `super()`, emitting `arrow_key_pressed`
+instead of moving the cursor; modified combinations (e.g. Shift+Left for
+selection) still fall through to normal `QLineEdit` behavior. All of
+`InspectorPanel`'s dynamically-built score fields use this instead of
+plain `QLineEdit`, forwarding to `MainWindow._on_navigate_requested()` --
+the same handler the global Left/Right/Up/Down `QShortcut`s use, so the
+behavior is identical whether or not a score field happens to have focus.
+If you add another always-must-work-regardless-of-focus keybinding, route
+it through `_on_navigate_requested()`'s direction-string pattern rather
+than inventing a new one-off mechanism.
+
+### Playlist annotation counts need an explicit refresh trigger
+
+`PlaylistPanel.set_videos()` takes an optional `cut_counts: dict[str,
+int]`, computed in `MainWindow.refresh_playlist()` from
+`project.get_entry(rel).cuts`. This is a snapshot, not reactive -- adding,
+editing, or deleting a cut only updates `InspectorPanel`/`TimelineWidget`
+via `_refresh_cuts_and_status()` unless `refresh_playlist()` is *also*
+called. `_on_add_cut()` and `_on_delete_cut()` both call it (the count
+changes); `_on_edit_cut()` deliberately doesn't (editing a cut's
+label/scores doesn't change how many cuts exist). If you add another
+cut-mutating action, decide the same way: does the *count* change, not
+just the cut's contents?
+
 ## Branches
 
 - `main` is the development branch (default; everything lands here first).
@@ -354,7 +419,13 @@ python3 -m venv .venv
   is simply never created), but still don't rely on that -- UI controller
   tests use an *empty* videos directory and poke
   `MainWindow._current_video_path` directly instead, consistent with
-  `tests/test_ui_controller.py`.
+  `tests/test_ui_controller.py`. If a test genuinely needs
+  `refresh_playlist()` to run against a real file (e.g. to exercise its
+  filesystem scan or the annotation-count computation), stub
+  `window.video_panel.load = lambda path: None` first so the row-0
+  auto-selection cascade can't reach real player construction --
+  `test_refresh_playlist_includes_annotation_counts` in
+  `test_ui_controller.py` is the reference example.
 - Core logic (models, project_store, annotation_store, video_scanner,
   Project facade) has no Qt/mpv dependency and is straightforward to test
   directly — prefer adding coverage there over UI-level tests.

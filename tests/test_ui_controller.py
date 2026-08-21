@@ -194,3 +194,58 @@ def test_edit_annotation_does_not_affect_add_annotation_state(scoring_window):
     # Selecting an existing cut for editing must clear any pending mark
     # in/out, so it can't accidentally be combined with Add Annotation.
     assert win.inspector_panel._add_cut_btn.isEnabled() is False
+
+
+def test_refresh_playlist_includes_annotation_counts(window):
+    # refresh_playlist() needs a real file for its filesystem scan
+    # (project.list_videos()) to find -- but populating the playlist also
+    # auto-selects row 0, which would normally cascade into
+    # _on_video_selected -> video_panel.load() -> a real MpvPlayer. Stub
+    # load() out for this test; it only needs to verify that cut counts
+    # get computed and threaded through to the playlist display, not that
+    # playback actually starts.
+    open(os.path.join(window.project.config.videos_dir, "a.mp4"), "wb").close()
+    window.project.add_cut("a.mp4", 1.0, 2.0, "goal")
+    window.project.add_cut("a.mp4", 3.0, 4.0, "goal")
+    window.video_panel.load = lambda path: None
+
+    window.refresh_playlist()
+
+    assert "(2)" in window.playlist_panel._list.item(0).text()
+
+
+def test_timeline_double_click_selects_and_seeks(window):
+    video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    window._current_video_path = video_path
+    cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal")
+    window._refresh_cuts_and_status("a.mp4")
+
+    # No real video is loaded (see module docstring), so seek_to() is a
+    # no-op on the player side -- this only verifies the *selection* half,
+    # which is what drives the inspector's edit fields.
+    window._on_timeline_cut_double_clicked(cut.id)
+
+    assert window.inspector_panel.selected_cut_id() == cut.id
+
+
+def test_navigate_left_right_do_not_raise_without_a_loaded_video(window):
+    # No real player is constructed in these tests -- seek_relative() must
+    # be a safe no-op rather than raising when _player is None.
+    window._on_navigate_requested("left")
+    window._on_navigate_requested("right")
+
+
+def test_navigate_up_down_steps_playlist(window):
+    # Stub out select_relative rather than populating real video files and
+    # calling refresh_playlist(): that would auto-select row 0, which fires
+    # _on_video_selected -> video_panel.load() -> a real MpvPlayer. Wiring
+    # correctness (right delta, right direction) is all this needs to
+    # verify; PlaylistPanel.select_relative()'s own stepping/clamping
+    # behavior is covered directly in test_playlist_panel.py.
+    calls = []
+    window.playlist_panel.select_relative = calls.append
+
+    window._on_navigate_requested("up")
+    window._on_navigate_requested("down")
+
+    assert calls == [-1, 1]

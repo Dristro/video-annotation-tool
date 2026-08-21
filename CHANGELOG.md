@@ -5,6 +5,45 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added/Changed: playlist counts, single scrub control, timeline
+double-click edit, contrast fix, arrow-key bug fix (`main` only --
+not yet promoted to `stable`)
+
+- **Playlist annotation counts**: each video in the left-hand playlist now
+  shows how many cuts it has (e.g. "a.mp4 (3)"), alongside the existing
+  ●/○ annotated marker. `PlaylistPanel.set_videos()` takes an optional
+  `cut_counts` dict; `MainWindow` recomputes and passes it after any
+  add/delete (not edit -- edit doesn't change the count).
+- **Removed the video panel's own position slider** -- it duplicated
+  `TimelineWidget`'s scrubbing (two circular-handle controls doing the
+  same job, reported as confusing). `TimelineWidget` is now the sole
+  scrub control: press-and-drag anywhere on it to scrub live (added
+  `mouseMoveEvent`-driven dragging with a guard so mpv's async position
+  updates can't fight the drag visually).
+- **Double-click a cut on the timeline** to select it (loading it into the
+  inspector for editing, same as a single click) *and* seek playback to
+  its start in one action -- "edit it live."
+- **Fixed low-contrast label text on the timeline**: cut labels now use
+  black or white text based on the background color's luminance instead
+  of hardcoded white, which was unreadable against several of the
+  lighter palette colors.
+- **Fixed a real bug**: once a score field had keyboard focus, Left/Right/
+  Up/Down stopped working for transport/playlist navigation entirely --
+  `QLineEdit` claims plain arrow keys for in-field cursor movement before
+  they ever reach shortcut dispatch. New `TransportLineEdit` (`ui/
+  widgets.py`) intercepts them and forwards to the same handler the
+  global shortcuts use. **Up/Down are also new** -- there was previously
+  no keyboard shortcut for stepping to the previous/next video in the
+  playlist at all; added both as global shortcuts and via score fields'
+  arrow keys.
+- REQUIREMENT.md: extended non-functional requirement #9 (annotation
+  count) and added #10 (keyboard navigation must keep working regardless
+  of focus).
+- 26 new tests (120 total): `TimelineWidget` drag/double-click behavior,
+  `TransportLineEdit` key interception, `contrasting_text_color`,
+  `PlaylistPanel` counts/`select_relative`, and `MainWindow` wiring for
+  all of the above.
+
 ### Changed: `prod` branch renamed to `stable`; per-branch READMEs
 
 - Renamed the `prod` branch to `stable` (same purpose: what end users run

@@ -60,7 +60,13 @@ time.
 7. Maintain under 4GB RAM usage at all times. If pre-loading a video doesn't fit in RAM, try
    fetching a starting chunk and load remaining after video is loaded into rendering region.
 8. Fast, snappy clip generation.
-9. Easy to distinguish annotated and non-annotated videos
+9. Easy to distinguish annotated and non-annotated videos, and at a glance how many
+   annotations each video already has.
+10. Keyboard playback/navigation shortcuts (seek left/right, step to the previous/next
+    video up/down) must keep working regardless of which widget currently has focus --
+    including while a data entry field (e.g. a score box) is focused. A data entry field
+    may still consume other keys normally (typing digits, etc.); only these navigation
+    keys are guaranteed to always reach transport/playlist control instead.
 
 ## Definitions
 

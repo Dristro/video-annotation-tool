@@ -37,7 +37,10 @@ class PlaylistPanel(QWidget):
         self._list.currentRowChanged.connect(self._on_row_changed)
         layout.addWidget(self._list)
 
-    def set_videos(self, videos: list[VideoInfo], annotated_flags: dict[str, bool]) -> None:
+    def set_videos(
+        self, videos: list[VideoInfo], annotated_flags: dict[str, bool], cut_counts: dict[str, int] | None = None
+    ) -> None:
+        cut_counts = cut_counts or {}
         current_path = self.current_path()
         self._list.blockSignals(True)
         self._list.clear()
@@ -46,7 +49,9 @@ class PlaylistPanel(QWidget):
         for video in videos:
             annotated = annotated_flags.get(video.rel_path, False)
             marker = "●" if annotated else "○"
-            item = QListWidgetItem(f"{marker}  {video.rel_path}")
+            count = cut_counts.get(video.rel_path, 0)
+            count_part = f"  ({count})" if count else ""
+            item = QListWidgetItem(f"{marker}  {video.rel_path}{count_part}")
             item.setForeground(ANNOTATED_COLOR if annotated else NOT_ANNOTATED_COLOR)
             self._list.addItem(item)
             self._paths_by_row.append(video.path)
@@ -73,6 +78,17 @@ class PlaylistPanel(QWidget):
     def select_path(self, path: str) -> None:
         if path in self._paths_by_row:
             self._list.setCurrentRow(self._paths_by_row.index(path))
+
+    def select_relative(self, delta: int) -> None:
+        """Move the selection by `delta` rows (e.g. -1/+1 for prev/next
+        video), clamped to the list's bounds. No-op past either end.
+        """
+        if not self._paths_by_row:
+            return
+        row = self._list.currentRow()
+        new_row = min(max(row + delta, 0), len(self._paths_by_row) - 1)
+        if new_row != row:
+            self._list.setCurrentRow(new_row)
 
     def _on_row_changed(self, row: int) -> None:
         if 0 <= row < len(self._paths_by_row):

@@ -120,6 +120,7 @@ class MainWindow(QMainWindow):
 
         self.timeline_widget.seek_requested.connect(self.video_panel.seek_to)
         self.timeline_widget.cut_selected.connect(self.inspector_panel.select_cut_by_id)
+        self.timeline_widget.cut_double_clicked.connect(self._on_timeline_cut_double_clicked)
 
         self.inspector_panel.mark_in_requested.connect(self._on_mark_in)
         self.inspector_panel.mark_out_requested.connect(self._on_mark_out)
@@ -129,13 +130,33 @@ class MainWindow(QMainWindow):
         self.inspector_panel.seek_to_cut_requested.connect(self._on_seek_to_cut)
         self.inspector_panel.set_annotated_requested.connect(self._on_set_annotated)
         self.inspector_panel.edit_labels_requested.connect(self._on_edit_labels)
+        self.inspector_panel.navigate_requested.connect(self._on_navigate_requested)
 
     def _install_shortcuts(self) -> None:
         QShortcut(QKeySequence(Qt.Key.Key_Space), self, activated=self.video_panel.toggle_pause)
         QShortcut(QKeySequence(Qt.Key.Key_I), self, activated=self._on_mark_in)
         QShortcut(QKeySequence(Qt.Key.Key_O), self, activated=self._on_mark_out)
-        QShortcut(QKeySequence(Qt.Key.Key_Left), self, activated=lambda: self.video_panel.seek_relative(-SEEK_STEP_SECONDS))
-        QShortcut(QKeySequence(Qt.Key.Key_Right), self, activated=lambda: self.video_panel.seek_relative(SEEK_STEP_SECONDS))
+        QShortcut(QKeySequence(Qt.Key.Key_Left), self, activated=lambda: self._on_navigate_requested("left"))
+        QShortcut(QKeySequence(Qt.Key.Key_Right), self, activated=lambda: self._on_navigate_requested("right"))
+        QShortcut(QKeySequence(Qt.Key.Key_Up), self, activated=lambda: self._on_navigate_requested("up"))
+        QShortcut(QKeySequence(Qt.Key.Key_Down), self, activated=lambda: self._on_navigate_requested("down"))
+
+    def _on_navigate_requested(self, direction: str) -> None:
+        """Left/Right seek, Up/Down step through the playlist. Shared by
+        the global shortcuts and by score fields' arrow keys (see
+        TransportLineEdit) -- score fields would otherwise swallow plain
+        arrow keys for in-field cursor movement, which was reported as a
+        real bug (transport controls going dead once a score field had
+        focus).
+        """
+        if direction == "left":
+            self.video_panel.seek_relative(-SEEK_STEP_SECONDS)
+        elif direction == "right":
+            self.video_panel.seek_relative(SEEK_STEP_SECONDS)
+        elif direction == "up":
+            self.playlist_panel.select_relative(-1)
+        elif direction == "down":
+            self.playlist_panel.select_relative(1)
 
     def _register_label_shortcuts(self) -> None:
         """(Re)bind each label's custom shortcut key to select it in the inspector.
@@ -158,7 +179,12 @@ class MainWindow(QMainWindow):
     def refresh_playlist(self) -> None:
         videos = self.project.list_videos()
         annotated_flags = {v.rel_path: self.project.is_annotated(v.rel_path) for v in videos}
-        self.playlist_panel.set_videos(videos, annotated_flags)
+        cut_counts = {}
+        for v in videos:
+            entry = self.project.get_entry(v.rel_path)
+            if entry:
+                cut_counts[v.rel_path] = len(entry.cuts)
+        self.playlist_panel.set_videos(videos, annotated_flags, cut_counts)
 
     def _on_video_selected(self, path: str) -> None:
         self._current_video_path = path
@@ -207,6 +233,7 @@ class MainWindow(QMainWindow):
         self.project.add_cut(rel, start, end, label, scores)
         self.inspector_panel.clear_pending()
         self._refresh_cuts_and_status(rel)
+        self.refresh_playlist()  # annotation count for this video just changed
 
     def _on_edit_cut(self, label: str) -> None:
         if self._current_video_path is None:
@@ -231,6 +258,7 @@ class MainWindow(QMainWindow):
         except CutNotFoundError:
             return
         self._refresh_cuts_and_status(rel)
+        self.refresh_playlist()  # annotation count for this video just changed
 
     def _on_seek_to_cut(self, cut_id: str) -> None:
         if self._current_video_path is None:
@@ -243,6 +271,14 @@ class MainWindow(QMainWindow):
             if cut.id == cut_id:
                 self.video_panel.seek_to(cut.start)
                 return
+
+    def _on_timeline_cut_double_clicked(self, cut_id: str) -> None:
+        """Double-clicking a cut on the timeline both selects it (loading
+        its label/scores into the inspector for editing) and seeks
+        playback to its start, so the user can watch it while editing.
+        """
+        self.inspector_panel.select_cut_by_id(cut_id)
+        self._on_seek_to_cut(cut_id)
 
     def _on_set_annotated(self, annotated: bool) -> None:
         if self._current_video_path is None:

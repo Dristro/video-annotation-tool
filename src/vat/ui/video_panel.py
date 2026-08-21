@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from vat.playback.mpv_player import MpvPlayer, VideoSurface
 
@@ -21,6 +21,12 @@ class VideoPanel(QWidget):
     The MpvPlayer (mpv's core client instance) is created lazily on first
     `load()`. VideoSurface renders it via mpv's Render API rather than
     window embedding -- see VideoSurface's docstring for why.
+
+    Scrubbing lives entirely on TimelineWidget now -- there is no position
+    slider here. The two controls used to duplicate the same job (drag to
+    seek) with two different circular-handle widgets stacked on top of each
+    other; TimelineWidget is the one that also shows cuts, so it's the one
+    that stayed.
 
     Position/duration/pause state is driven entirely by MpvPlayer's async
     property observers, not by polling -- see the long comment in
@@ -43,7 +49,6 @@ class VideoPanel(QWidget):
         self._position: float = 0.0
         self._duration: float = 0.0
         self._is_paused: bool = False
-        self._seeking = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -57,19 +62,8 @@ class VideoPanel(QWidget):
         self._play_btn.clicked.connect(self.toggle_pause)
         controls.addWidget(self._play_btn)
 
-        self._position_slider = QSlider(Qt.Orientation.Horizontal)
-        self._position_slider.setRange(0, 1000)
-        self._position_slider.sliderPressed.connect(self._on_seek_start)
-        # sliderMoved fires continuously while dragging (unlike valueChanged,
-        # it only fires for user drags, not programmatic setValue calls from
-        # _handle_position) -- seeking on every move is what makes scrubbing
-        # live instead of only jumping once the mouse is released.
-        self._position_slider.sliderMoved.connect(self._on_slider_moved)
-        self._position_slider.sliderReleased.connect(self._on_seek_end)
-        controls.addWidget(self._position_slider, stretch=1)
-
         self._time_label = QLabel("0:00 / 0:00")
-        controls.addWidget(self._time_label)
+        controls.addWidget(self._time_label, stretch=1)
 
         layout.addLayout(controls)
 
@@ -119,25 +113,8 @@ class VideoPanel(QWidget):
             self._player.shutdown()
             self._player = None
 
-    def _on_seek_start(self) -> None:
-        self._seeking = True
-
-    def _on_slider_moved(self, value: int) -> None:
-        if self._duration > 0:
-            self.seek_to((value / 1000.0) * self._duration)
-
-    def _on_seek_end(self) -> None:
-        # The last sliderMoved already seeked to this value; _seeking just
-        # needs clearing so _handle_position resumes driving the slider from
-        # mpv's actual position again.
-        self._seeking = False
-
     def _handle_position(self, value: float) -> None:
         self._position = value
-        if not self._seeking and self._duration > 0:
-            self._position_slider.blockSignals(True)
-            self._position_slider.setValue(int((value / self._duration) * 1000))
-            self._position_slider.blockSignals(False)
         self._time_label.setText(f"{format_time(value)} / {format_time(self._duration)}")
 
     def _handle_duration(self, value: float) -> None:

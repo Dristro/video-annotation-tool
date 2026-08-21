@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QPushButton,
@@ -20,6 +19,7 @@ from vat.models.cut import Cut
 from vat.models.label import Label
 from vat.models.score_definition import ScoreDefinition
 from vat.ui.video_panel import format_time
+from vat.ui.widgets import TransportLineEdit
 
 
 class InspectorPanel(QWidget):
@@ -44,6 +44,7 @@ class InspectorPanel(QWidget):
     seek_to_cut_requested = Signal(str)  # cut id
     set_annotated_requested = Signal(bool)
     edit_labels_requested = Signal()
+    navigate_requested = Signal(str)  # "left" | "right" | "up" | "down" -- from a score field's arrow keys
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -51,7 +52,7 @@ class InspectorPanel(QWidget):
         self._pending_out: float | None = None
         self._cuts_by_row: list[Cut] = []
         self._score_definitions: list[ScoreDefinition] = []
-        self._score_inputs: dict[str, QLineEdit] = {}
+        self._score_inputs: dict[str, TransportLineEdit] = {}
         self._scoring_enabled = False
 
         layout = QVBoxLayout(self)
@@ -178,7 +179,7 @@ class InspectorPanel(QWidget):
 
         if scoring_enabled:
             for defn in self._score_definitions:
-                edit = QLineEdit()
+                edit = TransportLineEdit()
                 edit.setPlaceholderText(f"{defn.minimum:g}–{defn.maximum:g}")
                 if defn.description:
                     edit.setToolTip(defn.description)
@@ -186,6 +187,7 @@ class InspectorPanel(QWidget):
                 validator.setNotation(QDoubleValidator.Notation.StandardNotation)
                 edit.setValidator(validator)
                 edit.textChanged.connect(self._refresh_button_states)
+                edit.arrow_key_pressed.connect(self.navigate_requested.emit)
                 self._scores_form.addRow(f"{defn.name}:", edit)
                 self._score_inputs[defn.name] = edit
 

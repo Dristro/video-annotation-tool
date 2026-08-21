@@ -5,7 +5,7 @@ from PySide6.QtGui import QMouseEvent, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
 from vat.models.cut import Cut
-from vat.utils.colors import color_for_label
+from vat.utils.colors import color_for_label, contrasting_text_color
 
 TRACK_HEIGHT = 28
 TRACK_MARGIN_TOP = 12
@@ -13,12 +13,18 @@ TRACK_MARGIN_TOP = 12
 
 class TimelineWidget(QWidget):
     """Bottom panel: a duration-scaled bar showing existing cuts as colored
-    regions, with a playhead line. Click anywhere to seek; click on a cut to
-    select it (e.g. for deletion in the inspector).
+    regions, with a playhead line.
+
+    This is the sole scrubbing control (the video panel's own position
+    slider was removed in favor of it) -- press-and-drag anywhere to scrub
+    live, click on a cut to select it (loads it for editing in the
+    inspector), double-click a cut to select it *and* seek playback to its
+    start.
     """
 
     seek_requested = Signal(float)  # seconds
     cut_selected = Signal(str)  # cut id
+    cut_double_clicked = Signal(str)  # cut id
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -26,12 +32,19 @@ class TimelineWidget(QWidget):
         self._duration: float = 0.0
         self._position: float = 0.0
         self._cuts: list[Cut] = []
+        # While the user is dragging, the position shown must track the
+        # drag itself, not whatever mpv's async position observer reports
+        # in the meantime (which lags slightly behind a seek and would
+        # otherwise make the playhead jitter/fight the mouse).
+        self._dragging = False
 
     def set_duration(self, seconds: float) -> None:
         self._duration = max(0.0, seconds)
         self.update()
 
     def set_position(self, seconds: float) -> None:
+        if self._dragging:
+            return
         self._position = max(0.0, seconds)
         self.update()
 
@@ -70,7 +83,7 @@ class TimelineWidget(QWidget):
             painter.setPen(QPen(color.darker(150)))
             painter.drawRoundedRect(rect, 2, 2)
             if cut.label:
-                painter.setPen(QPen(Qt.GlobalColor.white))
+                painter.setPen(QPen(contrasting_text_color(color)))
                 painter.drawText(rect.adjusted(3, 0, -3, 0), Qt.AlignmentFlag.AlignVCenter, cut.label)
 
         if self._duration > 0:
@@ -79,10 +92,31 @@ class TimelineWidget(QWidget):
             painter.drawLine(int(playhead_x), 0, int(playhead_x), self.height())
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
-        clicked_time = self._time_for_x(event.position().x())
+        self._dragging = True
         clicked_cut = self._cut_at(event.position().x())
         if clicked_cut is not None:
             self.cut_selected.emit(clicked_cut.id)
+        self._seek_to_x(event.position().x())
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if self._dragging:
+            self._seek_to_x(event.position().x())
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        self._dragging = False
+
+    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        clicked_cut = self._cut_at(event.position().x())
+        if clicked_cut is not None:
+            self.cut_double_clicked.emit(clicked_cut.id)
+
+    def _seek_to_x(self, x: float) -> None:
+        clicked_time = self._time_for_x(x)
+        # Update our own visual immediately (optimistic, ignores the
+        # _dragging guard in set_position()) so the playhead tracks the
+        # mouse smoothly instead of waiting on mpv's round trip.
+        self._position = clicked_time
+        self.update()
         self.seek_requested.emit(clicked_time)
 
     def _cut_at(self, x: float) -> Cut | None:

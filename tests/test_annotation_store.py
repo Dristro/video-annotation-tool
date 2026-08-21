@@ -69,6 +69,28 @@ def test_update_cut_preserves_continuation_fields(tmp_project_dir):
     assert updated.continues_forward is True
 
 
+def test_break_continuation_clears_fields(tmp_project_dir):
+    store = AnnotationStore.create(tmp_project_dir)
+    cut = store.add_cut(
+        "a.mp4",
+        Cut(start=1.0, end=2.0, label="goal", continuation_id="abc123", continues_forward=True),
+    )
+    updated = store.break_continuation("a.mp4", cut.id)
+    assert updated.continuation_id is None
+    assert updated.continues_forward is False
+    # Everything else about the cut is untouched.
+    assert updated.start == 1.0
+    assert updated.end == 2.0
+    assert updated.label == "goal"
+
+
+def test_break_continuation_missing_cut_raises(tmp_project_dir):
+    store = AnnotationStore.create(tmp_project_dir)
+    store.add_cut("a.mp4", Cut(start=1.0, end=2.0))
+    with pytest.raises(CutNotFoundError):
+        store.break_continuation("a.mp4", "does-not-exist")
+
+
 def test_update_missing_cut_raises(tmp_project_dir):
     store = AnnotationStore.create(tmp_project_dir)
     store.add_cut("a.mp4", Cut(start=1.0, end=2.0))

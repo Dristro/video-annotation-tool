@@ -271,6 +271,32 @@ def test_edit_annotation_retime_overlap_prompts_and_is_skipped_when_declined(win
     assert unchanged.end == 20.0
 
 
+def test_break_continuation_clears_link_when_confirmed(window, monkeypatch):
+    window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal", continuation_id="link1", continues_forward=True)
+    window._refresh_cuts_and_status("a.mp4")
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
+    window._on_break_continuation(cut.id)
+
+    updated = window.project.get_entry("a.mp4").cuts[0]
+    assert updated.continuation_id is None
+    assert updated.continues_forward is False
+
+
+def test_break_continuation_leaves_link_when_declined(window, monkeypatch):
+    window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal", continuation_id="link1", continues_forward=True)
+    window._refresh_cuts_and_status("a.mp4")
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.No)
+    window._on_break_continuation(cut.id)
+
+    updated = window.project.get_entry("a.mp4").cuts[0]
+    assert updated.continuation_id == "link1"
+    assert updated.continues_forward is True
+
+
 def test_refresh_playlist_includes_annotation_counts(window):
     # refresh_playlist() needs a real file for its filesystem scan
     # (project.list_videos()) to find -- but populating the playlist also

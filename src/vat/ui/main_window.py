@@ -126,6 +126,7 @@ class MainWindow(QMainWindow):
         self.inspector_panel.add_cut_requested.connect(self._on_add_cut)
         self.inspector_panel.edit_cut_requested.connect(self._on_edit_cut)
         self.inspector_panel.delete_cut_requested.connect(self._on_delete_cut)
+        self.inspector_panel.break_continuation_requested.connect(self._on_break_continuation)
         self.inspector_panel.seek_to_cut_requested.connect(self._on_seek_to_cut)
         self.inspector_panel.set_annotated_requested.connect(self._on_set_annotated)
         self.inspector_panel.edit_labels_requested.connect(lambda: self._on_open_project_settings("labels"))
@@ -323,6 +324,26 @@ class MainWindow(QMainWindow):
             return
         self._refresh_cuts_and_status(rel)
         self.refresh_playlist()  # annotation count for this video just changed
+
+    def _on_break_continuation(self, cut_id: str) -> None:
+        if self._current_video_path is None:
+            return
+        rel = self.project.rel_path(self._current_video_path)
+        confirm = QMessageBox.question(
+            self,
+            "Break Continuation Link",
+            "Break this annotation's link to the cut it continues from/into? "
+            "The other cut is left as-is (its own link becomes dangling, "
+            "harmless, and can be broken separately).",
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        self.project.break_continuation(rel, cut_id)
+        self._refresh_cuts_and_status(rel)
+        self.inspector_panel.select_cut_by_id(cut_id)
+        # Breaking a front half's link removes the pending-continuation
+        # banner the *next* video would otherwise show for it.
+        self._refresh_pending_continuation()
 
     def _on_seek_to_cut(self, cut_id: str) -> None:
         if self._current_video_path is None:

@@ -33,15 +33,11 @@ promise of order — just so nothing gets silently lost. Move items to
 
 ## Cross-video continuation follow-ups
 
-- [ ] No way to break/undo a continuation link once completed, short of
-      deleting one of the two linked cuts. Deleting the front half leaves
-      the back half's `continuation_id` dangling (harmless -- it just
-      won't match anything -- but shown as "←continued" with nothing to
-      point to).
-- [ ] "Edit Annotation" can't change a cut's continuation status (start it
-      continuing, stop it continuing, or re-link it) -- that's only set at
-      creation time via the checkbox/banner. Same scoping decision as the
-      label+scores-only edit limitation above.
+- [ ] Breaking a continuation link (via the "Break Continuation Link"
+      button, shown when the selected cut has one) is supported now, but
+      *starting* a new one is still only possible at creation time via the
+      checkbox/banner, and there's no way to re-link a cut to a
+      *different* other cut once broken (only delete + re-add).
 - [ ] If a video somehow has *more than one* pending continuation from the
       previous video (unusual, but the data model doesn't prevent it),
       `pending_continuation()` only surfaces the first one found; the

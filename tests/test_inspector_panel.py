@@ -157,6 +157,34 @@ def test_delete_cut_does_not_emit_when_confirmation_declined(panel, monkeypatch)
     assert emitted == []
 
 
+def test_break_continuation_button_visible_only_for_linked_cuts(panel):
+    # isVisible() is always False in these headless tests regardless of
+    # setVisible() (the top-level window is never shown) -- isHidden()
+    # reflects the explicit setVisible() call on this widget itself,
+    # independent of ancestor visibility (see CLAUDE.md's testing notes).
+    linked = Cut(start=1.0, end=2.0, label="goal", continuation_id="link1", continues_forward=True)
+    ordinary = Cut(start=5.0, end=6.0, label="goal")
+    panel.set_cuts([linked, ordinary], [], False)
+
+    panel.select_cut_by_id(linked.id)
+    assert panel._break_continuation_btn.isHidden() is False
+
+    panel.select_cut_by_id(ordinary.id)
+    assert panel._break_continuation_btn.isHidden() is True
+
+
+def test_break_continuation_emits_selected_cut_id(panel):
+    linked = Cut(start=1.0, end=2.0, label="goal", continuation_id="link1", continues_forward=True)
+    panel.set_cuts([linked], [], False)
+    panel.select_cut_by_id(linked.id)
+
+    emitted = []
+    panel.break_continuation_requested.connect(emitted.append)
+    panel._emit_break_continuation()
+
+    assert emitted == [linked.id]
+
+
 def test_set_cuts_shows_continuation_markers(panel):
     front_half = Cut(start=280.0, end=300.0, label="goal", continuation_id="link1", continues_forward=True)
     back_half = Cut(start=0.0, end=60.0, label="goal", continuation_id="link1", continues_forward=False)

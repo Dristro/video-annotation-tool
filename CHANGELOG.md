@@ -5,6 +5,20 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added: break a cut's continuation link
+
+- **Added**: selecting a cut that has a continuation link (either half)
+  now shows a "Break Continuation Link" button in the inspector, which
+  clears its `continuation_id`/`continues_forward` (confirmed via a
+  dialog first). Previously the only way to undo a link was deleting one
+  of the two linked cuts entirely. `AnnotationStore.break_continuation()`
+  is a dedicated method, kept separate from `update_cut()` (which
+  deliberately never touches these fields on an ordinary edit — see the
+  earlier continuation-drop bugfix entry below). Starting a *new* link is
+  still only possible at creation time via the checkbox/banner; re-linking
+  to a *different* cut after breaking isn't supported (BACKLOG.md).
+- 6 new tests (186 total).
+
 ### Added: re-time an existing annotation via Edit Annotation
 
 - **Added**: Edit Annotation can now adjust a cut's start/end, not just

@@ -84,6 +84,9 @@ class Project:
     def remove_cut(self, rel_path: str, cut_id: str) -> None:
         self.annotation_store.remove_cut(rel_path, cut_id)
 
+    def break_continuation(self, rel_path: str, cut_id: str) -> Cut:
+        return self.annotation_store.break_continuation(rel_path, cut_id)
+
     def is_cut_complete(self, cut: Cut) -> bool:
         """True unless scoring is enabled and the cut is missing a value for
         one of the project's *current* score definitions. Cuts created

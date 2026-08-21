@@ -54,6 +54,7 @@ class InspectorPanel(QWidget):
     add_cut_requested = Signal(str)  # label name
     edit_cut_requested = Signal(str)  # label name (operates on selected_cut_id())
     delete_cut_requested = Signal(str)  # cut id
+    break_continuation_requested = Signal(str)  # cut id
     seek_to_cut_requested = Signal(str)  # cut id
     set_annotated_requested = Signal(bool)
     edit_labels_requested = Signal()
@@ -144,6 +145,17 @@ class InspectorPanel(QWidget):
         self._add_cut_btn.clicked.connect(self._emit_add_cut)
         action_row.addWidget(self._add_cut_btn)
         mark_layout.addLayout(action_row)
+
+        # Only shown when the selected cut actually has a continuation
+        # link (either half) -- lets that link be severed without
+        # deleting the cut. Starting a *new* link is still only done at
+        # creation time via the "Continues into next video" checkbox /
+        # the "Start Here" banner; re-linking to a different cut isn't
+        # supported (BACKLOG.md).
+        self._break_continuation_btn = QPushButton("Break Continuation Link")
+        self._break_continuation_btn.setVisible(False)
+        self._break_continuation_btn.clicked.connect(self._emit_break_continuation)
+        mark_layout.addWidget(self._break_continuation_btn)
 
         layout.addWidget(self._mark_group)
 
@@ -426,6 +438,11 @@ class InspectorPanel(QWidget):
     def _emit_edit_cut(self) -> None:
         self.edit_cut_requested.emit(self.selected_label_name())
 
+    def _emit_break_continuation(self) -> None:
+        cut_id = self.selected_cut_id()
+        if cut_id:
+            self.break_continuation_requested.emit(cut_id)
+
     def _emit_delete_cut(self) -> None:
         cut_id = self.selected_cut_id()
         if not cut_id:
@@ -468,9 +485,11 @@ class InspectorPanel(QWidget):
                     continue
                 value = cut.scores.get(defn.name)
                 edit.setText("" if value is None else f"{value:g}")
+            self._break_continuation_btn.setVisible(cut.continuation_id is not None)
         else:
             for edit in self._score_inputs.values():
                 edit.clear()
+            self._break_continuation_btn.setVisible(False)
         self._pending_in = None
         self._pending_out = None
         # These belong to the "add a new / complete a continuation" flow,

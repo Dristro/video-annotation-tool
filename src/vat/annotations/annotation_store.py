@@ -100,6 +100,29 @@ class AnnotationStore:
                 return updated
         raise CutNotFoundError(f"No cut '{cut_id}' for video '{rel_path}'")
 
+    def break_continuation(self, rel_path: str, cut_id: str) -> Cut:
+        """Clear a cut's continuation_id/continues_forward, severing it
+        from whatever cut it was linked to. A dedicated method rather than
+        going through update_cut(), which deliberately never touches these
+        fields (see its docstring) -- explicitly breaking a link is a
+        distinct action from an ordinary label/score/timing edit. The
+        dangling id left on the other half of the pair (if any) is
+        harmless per BACKLOG.md -- it just won't match anything anymore.
+        """
+        entry = self.videos.get(rel_path)
+        if entry is None:
+            raise CutNotFoundError(f"No entry for video '{rel_path}'")
+        for cut in entry.cuts:
+            if cut.id == cut_id:
+                updated = Cut(
+                    id=cut.id, start=cut.start, end=cut.end, label=cut.label, scores=dict(cut.scores),
+                    continuation_id=None, continues_forward=False,
+                )
+                entry.cuts[entry.cuts.index(cut)] = updated
+                self.save()
+                return updated
+        raise CutNotFoundError(f"No cut '{cut_id}' for video '{rel_path}'")
+
     def remove_cut(self, rel_path: str, cut_id: str) -> None:
         entry = self.videos.get(rel_path)
         if entry is None:

@@ -86,7 +86,15 @@ class AnnotationStore:
                 # None means "leave scores untouched", not "clear them" --
                 # only replace when a scores dict is explicitly passed.
                 new_scores = dict(cut.scores) if scores is None else dict(scores)
-                updated = Cut(id=cut.id, start=new_start, end=new_end, label=new_label, scores=new_scores)
+                # continuation_id/continues_forward aren't editable through
+                # this method (no caller passes them) -- carry them over
+                # from the existing cut rather than letting the Cut()
+                # constructor reset them to their dataclass defaults, which
+                # would silently sever a continuation link on any edit.
+                updated = Cut(
+                    id=cut.id, start=new_start, end=new_end, label=new_label, scores=new_scores,
+                    continuation_id=cut.continuation_id, continues_forward=cut.continues_forward,
+                )
                 entry.cuts[entry.cuts.index(cut)] = updated
                 self.save()
                 return updated

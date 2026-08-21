@@ -55,6 +55,20 @@ def test_update_cut_can_replace_scores(tmp_project_dir):
     assert store.get_entry("a.mp4").cuts[0].scores == {"Technique": 75}
 
 
+def test_update_cut_preserves_continuation_fields(tmp_project_dir):
+    store = AnnotationStore.create(tmp_project_dir)
+    cut = store.add_cut(
+        "a.mp4",
+        Cut(start=1.0, end=2.0, label="goal", continuation_id="abc123", continues_forward=True),
+    )
+    # Editing label/scores must not sever a continuation link -- only
+    # explicit continuation-related mutations should ever change these.
+    store.update_cut("a.mp4", cut.id, label="foul", scores={"Technique": 90})
+    updated = store.get_entry("a.mp4").cuts[0]
+    assert updated.continuation_id == "abc123"
+    assert updated.continues_forward is True
+
+
 def test_update_missing_cut_raises(tmp_project_dir):
     store = AnnotationStore.create(tmp_project_dir)
     store.add_cut("a.mp4", Cut(start=1.0, end=2.0))

@@ -5,6 +5,19 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed: editing an annotation silently severed its cross-video continuation link
+
+- **Fixed**: `AnnotationStore.update_cut()` rebuilt the cut's dataclass
+  without carrying over `continuation_id`/`continues_forward`, so clicking
+  "Edit Annotation" on *any* cut that was part of a cross-video
+  continuation link (REQUIREMENT.md #11) reset those fields to their
+  defaults and silently broke the link, even when only the label or a
+  score was changed. Found during a documentation-verification pass, not
+  reported by a user. Now preserved across `update_cut` unless a future
+  caller explicitly changes them (nothing currently does).
+- 1 new regression test (153 total):
+  `test_update_cut_preserves_continuation_fields`.
+
 ### Added/Fixed: playback speed control, play/pause button resize bug
 (REQUIREMENT.md #12, `main` only)
 

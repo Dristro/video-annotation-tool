@@ -5,6 +5,18 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added: drag-to-resize cut edges on the timeline
+
+- **Added**: pressing within 6px of a cut's start or end edge on
+  `TimelineWidget` now drags that edge instead of scrubbing, resizing the
+  cut live (clamped so it can't cross its own other edge or go outside
+  [0, duration]); releasing emits `cut_resized`, handled by
+  `MainWindow._on_cut_resized()` the same way as a re-time via Edit
+  Annotation — same overlap-confirmation prompt, and pushed onto the same
+  undo/redo stack. Previously the only way to change a cut's timing was
+  Mark In/Out + Edit Annotation, or delete + re-add.
+- 11 new tests (237 total).
+
 ### Added: undo/redo for cut add/edit/delete
 
 - **Added**: a small command-pattern `UndoStack` (`project/undo_stack.py`)

@@ -20,8 +20,6 @@ promise of order — just so nothing gets silently lost. Move items to
 - [ ] Thumbnail previews in the playlist panel (currently text + a
       colored ●/○ annotated marker only).
 - [ ] Waveform/audio preview under the timeline.
-- [ ] Drag-to-resize cut edges directly on the timeline, instead of only
-      Mark In / Mark Out buttons + a separate "Add Cut" action.
 - [ ] Undo/redo only covers cut add/edit/delete (`UndoStack` in
       `project/undo_stack.py`, wired in `MainWindow`), not label/score
       renames -- those propagate across every video's cuts via

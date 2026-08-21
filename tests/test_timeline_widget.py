@@ -137,6 +137,101 @@ def test_hover_away_from_any_cut_does_not_show_tooltip(timeline, monkeypatch):
     assert shown == []
 
 
+def test_press_near_start_edge_begins_resize_not_scrub(timeline):
+    cut = Cut(start=2.0, end=4.0, label="goal")
+    timeline.set_cuts([cut])
+    seeks = []
+    timeline.seek_requested.connect(seeks.append)
+
+    start_x = timeline._x_for_time(2.0)
+    timeline.mousePressEvent(_mouse_event(QEvent.Type.MouseButtonPress, start_x))
+
+    assert timeline._resize_cut_id == cut.id
+    assert timeline._resize_edge == "start"
+    assert timeline._dragging is False
+    assert seeks == []  # a resize-grab must not also scrub/seek
+
+
+def test_press_away_from_edges_scrubs_as_before(timeline):
+    cut = Cut(start=2.0, end=4.0, label="goal")
+    timeline.set_cuts([cut])
+
+    far_x = timeline._x_for_time(8.0)
+    timeline.mousePressEvent(_mouse_event(QEvent.Type.MouseButtonPress, far_x))
+
+    assert timeline._resize_cut_id is None
+    assert timeline._dragging is True
+
+
+def test_drag_start_edge_updates_live_resize_and_clamps_to_min_length(timeline):
+    cut = Cut(start=2.0, end=4.0, label="goal")
+    timeline.set_cuts([cut])
+    start_x = timeline._x_for_time(2.0)
+    timeline.mousePressEvent(_mouse_event(QEvent.Type.MouseButtonPress, start_x))
+
+    # Drag the start edge to 3s -- still valid (< end).
+    timeline.mouseMoveEvent(
+        _mouse_event(QEvent.Type.MouseMove, timeline._x_for_time(3.0), button=Qt.MouseButton.NoButton)
+    )
+    assert timeline._live_resize[0] == pytest.approx(3.0, abs=0.05)
+
+    # Drag past the end edge -- must clamp instead of crossing it.
+    timeline.mouseMoveEvent(
+        _mouse_event(QEvent.Type.MouseMove, timeline._x_for_time(9.0), button=Qt.MouseButton.NoButton)
+    )
+    new_start, new_end = timeline._live_resize
+    assert new_end == 4.0
+    assert new_start < new_end
+
+
+def test_drag_end_edge_clamps_to_duration(timeline):
+    cut = Cut(start=2.0, end=4.0, label="goal")
+    timeline.set_cuts([cut])
+    end_x = timeline._x_for_time(4.0)
+    timeline.mousePressEvent(_mouse_event(QEvent.Type.MouseButtonPress, end_x))
+    assert timeline._resize_edge == "end"
+
+    timeline.mouseMoveEvent(
+        _mouse_event(QEvent.Type.MouseMove, timeline._x_for_time(20.0), button=Qt.MouseButton.NoButton)
+    )
+
+    new_start, new_end = timeline._live_resize
+    assert new_end <= timeline._duration
+
+
+def test_release_after_resize_emits_cut_resized_and_clears_state(timeline):
+    cut = Cut(start=2.0, end=4.0, label="goal")
+    timeline.set_cuts([cut])
+    end_x = timeline._x_for_time(4.0)
+    timeline.mousePressEvent(_mouse_event(QEvent.Type.MouseButtonPress, end_x))
+    timeline.mouseMoveEvent(
+        _mouse_event(QEvent.Type.MouseMove, timeline._x_for_time(6.0), button=Qt.MouseButton.NoButton)
+    )
+
+    resized = []
+    timeline.cut_resized.connect(lambda *args: resized.append(args))
+    timeline.mouseReleaseEvent(_mouse_event(QEvent.Type.MouseButtonRelease, timeline._x_for_time(6.0)))
+
+    assert len(resized) == 1
+    emitted_id, new_start, new_end = resized[0]
+    assert emitted_id == cut.id
+    assert new_start == 2.0
+    assert new_end == pytest.approx(6.0, abs=0.05)
+    assert timeline._resize_cut_id is None
+    assert timeline._live_resize is None
+
+
+def test_edge_grab_also_selects_the_cut(timeline):
+    cut = Cut(start=2.0, end=4.0, label="goal")
+    timeline.set_cuts([cut])
+    selected = []
+    timeline.cut_selected.connect(selected.append)
+
+    timeline.mousePressEvent(_mouse_event(QEvent.Type.MouseButtonPress, timeline._x_for_time(2.0)))
+
+    assert selected == [cut.id]
+
+
 def test_continuation_tag_empty_for_ordinary_cut():
     assert _continuation_tag(Cut(start=0.0, end=1.0)) == ""
 

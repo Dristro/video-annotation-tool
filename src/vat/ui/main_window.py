@@ -137,6 +137,7 @@ class MainWindow(QMainWindow):
         self.timeline_widget.seek_requested.connect(self.video_panel.seek_to)
         self.timeline_widget.cut_selected.connect(self.inspector_panel.select_cut_by_id)
         self.timeline_widget.cut_double_clicked.connect(self._on_timeline_cut_double_clicked)
+        self.timeline_widget.cut_resized.connect(self._on_cut_resized)
 
         self.inspector_panel.mark_in_requested.connect(self._on_mark_in)
         self.inspector_panel.mark_out_requested.connect(self._on_mark_out)
@@ -363,6 +364,37 @@ class MainWindow(QMainWindow):
             # saved values rather than losing selection when the list
             # rebuilds.
             self.inspector_panel.select_cut_by_id(cut_id)
+
+    def _on_cut_resized(self, cut_id: str, start: float, end: float) -> None:
+        """TimelineWidget's edge-drag already enforces a minimum length
+        live, so `start < end` should always hold here -- checked anyway
+        since this is data arriving from a signal, not a direct call.
+        """
+        if self._current_video_path is None or end <= start:
+            return
+        rel = self.project.rel_path(self._current_video_path)
+        entry = self.project.get_entry(rel)
+        old_cut = next((c for c in entry.cuts if c.id == cut_id), None) if entry else None
+        if old_cut is None:
+            return
+        if (start, end) == (old_cut.start, old_cut.end):
+            return  # e.g. a click that grabbed an edge but didn't actually move it
+        if self.project.overlapping_cuts(rel, start, end, exclude_cut_id=cut_id):
+            confirm = QMessageBox.question(
+                self,
+                "Overlapping Annotation",
+                "This new range overlaps an existing annotation on this video. Save it anyway?",
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                self._refresh_cuts_and_status(rel)  # repaint the timeline back to the committed range
+                return
+        self._apply_cut_snapshot(rel, cut_id, start, end, old_cut.label, old_cut.scores)
+        self._undo_stack.push(Command(
+            undo=lambda: self._apply_cut_snapshot(
+                rel, cut_id, old_cut.start, old_cut.end, old_cut.label, old_cut.scores
+            ),
+            redo=lambda: self._apply_cut_snapshot(rel, cut_id, start, end, old_cut.label, old_cut.scores),
+        ))
 
     def _on_delete_cut(self, cut_id: str) -> None:
         if self._current_video_path is None:

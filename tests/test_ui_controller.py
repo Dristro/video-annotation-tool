@@ -297,6 +297,58 @@ def test_break_continuation_leaves_link_when_declined(window, monkeypatch):
     assert updated.continues_forward is True
 
 
+def test_cut_resized_updates_timing(window):
+    window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal")
+    window._refresh_cuts_and_status("a.mp4")
+
+    window._on_cut_resized(cut.id, 5.0, 8.0)
+
+    updated = window.project.get_entry("a.mp4").cuts[0]
+    assert updated.start == 5.0
+    assert updated.end == 8.0
+
+
+def test_cut_resized_noop_when_range_unchanged(window):
+    window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal")
+    window._refresh_cuts_and_status("a.mp4")
+
+    window._on_cut_resized(cut.id, 1.0, 2.0)  # e.g. an edge grab with no actual movement
+
+    assert window._undo_stack.can_undo() is False
+
+
+def test_cut_resized_overlap_prompts_and_is_skipped_when_declined(window, monkeypatch):
+    window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    window.project.add_cut("a.mp4", 10.0, 15.0, "goal")
+    cut2 = window.project.add_cut("a.mp4", 20.0, 25.0, "goal")
+    window._refresh_cuts_and_status("a.mp4")
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.No)
+    window._on_cut_resized(cut2.id, 12.0, 25.0)
+
+    unchanged = next(c for c in window.project.get_entry("a.mp4").cuts if c.id == cut2.id)
+    assert unchanged.start == 20.0
+
+
+def test_undo_redo_cut_resize(window):
+    window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal")
+    window._refresh_cuts_and_status("a.mp4")
+
+    window._on_cut_resized(cut.id, 5.0, 8.0)
+    window._on_undo()
+    reverted = window.project.get_entry("a.mp4").cuts[0]
+    assert reverted.start == 1.0
+    assert reverted.end == 2.0
+
+    window._on_redo()
+    reapplied = window.project.get_entry("a.mp4").cuts[0]
+    assert reapplied.start == 5.0
+    assert reapplied.end == 8.0
+
+
 def test_undo_add_cut_removes_it(window):
     video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     window._current_video_path = video_path

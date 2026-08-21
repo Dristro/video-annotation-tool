@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 from vat.models.cut import Cut
 from vat.models.label import Label
 from vat.models.score_definition import ScoreDefinition
+from vat.ui.timeline_widget import _continuation_tag
 from vat.ui.video_panel import format_time
 from vat.ui.widgets import TransportLineEdit
 
@@ -440,9 +441,9 @@ class InspectorPanel(QWidget):
             incomplete_part = f"  ⚠ missing: {', '.join(missing)}" if missing else ""
             continuation_part = ""
             if cut.continues_forward:
-                continuation_part = "  →continues"
+                continuation_part = f"  →continues{_continuation_tag(cut)}"
             elif cut.continuation_id:
-                continuation_part = "  ←continued"
+                continuation_part = f"  ←continued{_continuation_tag(cut)}"
             text = (
                 f"{format_time(cut.start)} – {format_time(cut.end)}{label_part}"
                 f"{scores_part}{incomplete_part}{continuation_part}"

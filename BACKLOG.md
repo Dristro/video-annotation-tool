@@ -38,11 +38,6 @@ promise of order — just so nothing gets silently lost. Move items to
       *starting* a new one is still only possible at creation time via the
       checkbox/banner, and there's no way to re-link a cut to a
       *different* other cut once broken (only delete + re-add).
-- [ ] No visual distinction on the timeline for *which* other cut a →/←
-      marker links to -- with several continuing cuts in a project it's
-      not obvious which pairs go together beyond matching labels/timing
-      by eye.
-
 ## Correctness / robustness
 
 - [ ] `video_scanner.list_videos` only scans the top level of the videos

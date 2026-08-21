@@ -239,5 +239,7 @@ def test_set_cuts_shows_continuation_markers(panel):
     panel.set_cuts([front_half, back_half, ordinary], [], False)
 
     assert "→" in panel._cuts_list.item(0).text()
+    assert "#link" in panel._cuts_list.item(0).text()
     assert "←" in panel._cuts_list.item(1).text()
+    assert "#link" in panel._cuts_list.item(1).text()
     assert "→" not in panel._cuts_list.item(2).text() and "←" not in panel._cuts_list.item(2).text()

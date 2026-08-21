@@ -7,7 +7,7 @@ from PySide6.QtGui import QHelpEvent, QMouseEvent  # noqa: E402
 from PySide6.QtWidgets import QApplication, QToolTip  # noqa: E402
 
 from vat.models.cut import Cut  # noqa: E402
-from vat.ui.timeline_widget import TimelineWidget  # noqa: E402
+from vat.ui.timeline_widget import TimelineWidget, _continuation_tag  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -135,6 +135,35 @@ def test_hover_away_from_any_cut_does_not_show_tooltip(timeline, monkeypatch):
     timeline.event(help_event)
 
     assert shown == []
+
+
+def test_continuation_tag_empty_for_ordinary_cut():
+    assert _continuation_tag(Cut(start=0.0, end=1.0)) == ""
+
+
+def test_continuation_tag_derived_from_continuation_id():
+    cut = Cut(start=0.0, end=1.0, continuation_id="abcdef123", continues_forward=True)
+    assert _continuation_tag(cut) == " #abcd"
+
+
+def test_continuation_tag_matches_for_linked_pair():
+    front = Cut(start=8.0, end=10.0, continuation_id="shared123", continues_forward=True)
+    back = Cut(start=0.0, end=2.0, continuation_id="shared123", continues_forward=False)
+    assert _continuation_tag(front) == _continuation_tag(back)
+
+
+def test_hover_over_continuation_cut_tooltip_includes_tag(timeline, monkeypatch):
+    cut = Cut(start=1.0, end=2.0, label="goal", continuation_id="abcdef123", continues_forward=True)
+    timeline.set_cuts([cut])
+
+    shown = []
+    monkeypatch.setattr(QToolTip, "showText", lambda pos, text, widget: shown.append(text))
+
+    x = int(timeline._x_for_time(1.5))
+    help_event = QHelpEvent(QEvent.Type.ToolTip, QPoint(x, 20), QPoint(x, 20))
+    timeline.event(help_event)
+
+    assert "continuation #abcd" in shown[0]
 
 
 def test_paints_without_error_for_continuation_cuts(timeline):

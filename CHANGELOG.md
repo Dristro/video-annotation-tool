@@ -5,6 +5,18 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added: short id tag distinguishes which cuts a continuation link pairs
+
+- **Added**: cuts with a continuation link now show a short 4-char tag
+  derived from their `continuation_id` (e.g. `#a1b2`) next to the →/←
+  marker — on the timeline (rectangle label + hover tooltip) and in the
+  inspector's cuts list. Two cuts that link to each other always show the
+  same tag, so with several continuing cuts in a project it's now
+  possible to tell which pairs go together without matching label/timing
+  by eye. New `_continuation_tag()` helper in `timeline_widget.py`,
+  reused by `inspector_panel.py`.
+- 8 new tests (197 total).
+
 ### Added: handle more than one pending continuation from the previous video
 
 - **Added**: `Project.pending_continuations()` (new, plural) returns every

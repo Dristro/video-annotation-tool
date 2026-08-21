@@ -12,6 +12,18 @@ TRACK_HEIGHT = 28
 TRACK_MARGIN_TOP = 12
 
 
+def _continuation_tag(cut: Cut) -> str:
+    """Short, stable text tag (first 4 hex chars of continuation_id) so
+    two cuts that link to each other -- shown on different videos'
+    timelines, possibly among several other continuing cuts -- can be
+    told apart at a glance instead of only by matching label/timing by
+    eye (BACKLOG.md). Empty for a cut with no continuation link at all.
+    """
+    if not cut.continuation_id:
+        return ""
+    return f" #{cut.continuation_id[:4]}"
+
+
 class TimelineWidget(QWidget):
     """Bottom panel: a duration-scaled bar showing existing cuts as colored
     regions, with a playhead line.
@@ -91,7 +103,8 @@ class TimelineWidget(QWidget):
                 suffix = " →" if cut.continues_forward else ""
                 painter.setPen(QPen(contrasting_text_color(color)))
                 painter.drawText(
-                    rect.adjusted(3, 0, -3, 0), Qt.AlignmentFlag.AlignVCenter, f"{prefix}{cut.label}{suffix}"
+                    rect.adjusted(3, 0, -3, 0), Qt.AlignmentFlag.AlignVCenter,
+                    f"{prefix}{cut.label}{suffix}{_continuation_tag(cut)}",
                 )
 
         if self._duration > 0:
@@ -119,6 +132,9 @@ class TimelineWidget(QWidget):
             lines.append(cut.label)
         for name, value in cut.scores.items():
             lines.append(f"{name}: {value:g}")
+        tag = _continuation_tag(cut)
+        if tag:
+            lines.append(f"continuation{tag}")
         return "\n".join(lines)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802

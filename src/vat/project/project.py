@@ -97,6 +97,22 @@ class Project:
             return []
         return [defn.name for defn in self.config.score_definitions if defn.name not in cut.scores]
 
+    def overlapping_cuts(self, rel_path: str, start: float, end: float, exclude_cut_id: str | None = None) -> list[Cut]:
+        """Existing cuts in `rel_path` whose [start, end) range overlaps the
+        given one. Overlaps are allowed (not rejected) per REQUIREMENT.md --
+        this is purely so the UI can warn before creating/re-timing one,
+        not a validation gate. `exclude_cut_id` excludes the cut being
+        edited/re-timed from being reported as overlapping itself.
+        """
+        entry = self.get_entry(rel_path)
+        if entry is None:
+            return []
+        return [
+            cut
+            for cut in entry.cuts
+            if cut.id != exclude_cut_id and cut.start < end and start < cut.end
+        ]
+
     def pending_continuation(self, rel_path: str, previous_rel_path: str | None) -> Cut | None:
         """If the previous video (by playlist order) has a cut marked
         `continues_forward` that this video hasn't yet completed with a

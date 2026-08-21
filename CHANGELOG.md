@@ -5,6 +5,23 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added: delete confirmation, duplicate-shortcut warning, overlap warning
+
+- **Added**: deleting a cut now shows a Yes/No confirmation ("This cannot
+  be undone.") instead of deleting immediately — no undo exists yet
+  (`BACKLOG.md`), so this is the only safety net for now.
+- **Added**: `LabelEditorDialog` warns (non-blocking) when a label's
+  shortcut collides with another label's — previously the last-registered
+  `QShortcut` silently won and the other label's shortcut just never
+  fired, with no indication why.
+- **Added**: adding an annotation that overlaps an existing one on the
+  same video now prompts for confirmation first. Overlaps are still
+  allowed (REQUIREMENT.md doesn't forbid them) — this only surfaces the
+  case in case it's accidental. `Project.overlapping_cuts()` is the new
+  reusable check (half-open interval overlap, `start < other.end and
+  other.start < end`).
+- 10 new tests (163 total).
+
 ### Fixed: editing an annotation silently severed its cross-video continuation link
 
 - **Fixed**: `AnnotationStore.update_cut()` rebuilt the cut's dataclass

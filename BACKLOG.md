@@ -25,8 +25,6 @@ promise of order — just so nothing gets silently lost. Move items to
 - [ ] Dark theme / visual polish matching DaVinci Resolve's actual palette
       and spacing — current layout matches the *arrangement* (playlist /
       preview / timeline / inspector) but not the visual styling.
-- [ ] Confirmation prompt before deleting a cut (currently immediate,
-      no undo).
 - [ ] Undo/redo for cut edits and label changes.
 - [ ] "Recent projects" list (currently only remembers the single
       last-opened project).
@@ -75,10 +73,6 @@ promise of order — just so nothing gets silently lost. Move items to
 
 ## Correctness / robustness
 
-- [ ] Detect and warn on duplicate label shortcut keys (currently the last
-      registered `QShortcut` for a colliding key silently wins).
-- [ ] Warn/handle overlapping cuts within the same video (currently allowed
-      silently; may or may not be desired).
 - [ ] `video_scanner.list_videos` only scans the top level of the videos
       directory (flat playlist, matching "move through all videos in dir
       like a playlist"). No option yet for recursive/subfolder scanning if

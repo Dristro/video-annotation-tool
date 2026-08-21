@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -401,8 +402,19 @@ class InspectorPanel(QWidget):
 
     def _emit_delete_cut(self) -> None:
         cut_id = self.selected_cut_id()
-        if cut_id:
-            self.delete_cut_requested.emit(cut_id)
+        if not cut_id:
+            return
+        # No undo for a delete (BACKLOG.md) -- a confirmation is the only
+        # safety net, so it's a real (blocking, Yes/No) dialog rather than
+        # something dismissible without deciding.
+        confirm = QMessageBox.question(
+            self,
+            "Delete Annotation",
+            "Delete this annotation? This cannot be undone.",
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        self.delete_cut_requested.emit(cut_id)
 
     def _on_cut_double_clicked(self, item: QListWidgetItem) -> None:
         row = self._cuts_list.row(item)

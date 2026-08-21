@@ -13,7 +13,7 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QMessageBox  # noqa: E402
 
 from vat.project.project import Project  # noqa: E402
 from vat.ui.main_window import MainWindow  # noqa: E402
@@ -60,6 +60,36 @@ def test_add_cut_via_controller_creates_entry(window):
     assert entry.cuts[0].label == "goal"
     # pending in/out should reset after a successful add
     assert window.inspector_panel.pending_in() is None
+
+
+def test_add_overlapping_cut_prompts_and_is_skipped_when_declined(window, monkeypatch):
+    video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    window._current_video_path = video_path
+    window.inspector_panel.set_pending_in(1.0)
+    window.inspector_panel.set_pending_out(5.0)
+    window._on_add_cut("goal")
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.No)
+    window.inspector_panel.set_pending_in(3.0)
+    window.inspector_panel.set_pending_out(8.0)
+    window._on_add_cut("goal")
+
+    assert len(window.project.get_entry("a.mp4").cuts) == 1
+
+
+def test_add_overlapping_cut_proceeds_when_confirmed(window, monkeypatch):
+    video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    window._current_video_path = video_path
+    window.inspector_panel.set_pending_in(1.0)
+    window.inspector_panel.set_pending_out(5.0)
+    window._on_add_cut("goal")
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
+    window.inspector_panel.set_pending_in(3.0)
+    window.inspector_panel.set_pending_out(8.0)
+    window._on_add_cut("goal")
+
+    assert len(window.project.get_entry("a.mp4").cuts) == 2
 
 
 def test_mark_annotated_via_controller_updates_playlist(window):

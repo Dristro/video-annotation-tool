@@ -2,7 +2,7 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QMessageBox  # noqa: E402
 
 from vat.models.cut import Cut  # noqa: E402
 from vat.models.label import Label  # noqa: E402
@@ -85,6 +85,34 @@ def test_selecting_an_existing_cut_clears_continuation_completion_state(panel):
 
     assert panel.completing_continuation_id() is None
     assert panel._continues_checkbox.isChecked() is False
+
+
+def test_delete_cut_asks_for_confirmation_and_emits_when_confirmed(panel, monkeypatch):
+    cut = Cut(start=1.0, end=2.0, label="goal")
+    panel.set_cuts([cut], [], False)
+    panel.select_cut_by_id(cut.id)
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
+    emitted = []
+    panel.delete_cut_requested.connect(emitted.append)
+
+    panel._emit_delete_cut()
+
+    assert emitted == [cut.id]
+
+
+def test_delete_cut_does_not_emit_when_confirmation_declined(panel, monkeypatch):
+    cut = Cut(start=1.0, end=2.0, label="goal")
+    panel.set_cuts([cut], [], False)
+    panel.select_cut_by_id(cut.id)
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.No)
+    emitted = []
+    panel.delete_cut_requested.connect(emitted.append)
+
+    panel._emit_delete_cut()
+
+    assert emitted == []
 
 
 def test_set_cuts_shows_continuation_markers(panel):

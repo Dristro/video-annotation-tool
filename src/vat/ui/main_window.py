@@ -254,6 +254,16 @@ class MainWindow(QMainWindow):
         end = self.video_panel.duration() if continues_forward else self.inspector_panel.pending_out()
         if start is None or end is None or end <= start:
             return
+        if self.project.overlapping_cuts(rel, start, end):
+            # Allowed, not blocked (REQUIREMENT.md doesn't forbid it) --
+            # just a heads-up in case it wasn't intentional.
+            confirm = QMessageBox.question(
+                self,
+                "Overlapping Annotation",
+                "This overlaps an existing annotation on this video. Add it anyway?",
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
         scores = self.inspector_panel.pending_scores()
         # completing_continuation_id() is set when this Add Annotation is
         # finishing the back half of a continuation started in the

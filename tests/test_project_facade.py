@@ -22,6 +22,32 @@ def test_full_annotation_lifecycle(tmp_project_dir, tmp_videos_dir):
     assert project.is_annotated(rel) is True
 
 
+def test_overlapping_cuts_detects_overlap(tmp_project_dir, tmp_videos_dir):
+    project = _make_project(tmp_project_dir, tmp_videos_dir)
+    rel = project.rel_path(project.list_videos()[0].path)
+    project.add_cut(rel, 10.0, 20.0, "goal")
+
+    assert [c.label for c in project.overlapping_cuts(rel, 15.0, 25.0)] == ["goal"]
+    assert project.overlapping_cuts(rel, 20.0, 30.0) == []  # touching, not overlapping
+    assert project.overlapping_cuts(rel, 0.0, 10.0) == []  # touching, not overlapping
+
+
+def test_overlapping_cuts_excludes_given_cut_id(tmp_project_dir, tmp_videos_dir):
+    project = _make_project(tmp_project_dir, tmp_videos_dir)
+    rel = project.rel_path(project.list_videos()[0].path)
+    cut = project.add_cut(rel, 10.0, 20.0, "goal")
+
+    # Re-timing this exact cut over its own old range shouldn't flag itself.
+    assert project.overlapping_cuts(rel, 10.0, 20.0, exclude_cut_id=cut.id) == []
+
+
+def test_overlapping_cuts_no_entry_returns_empty(tmp_project_dir, tmp_videos_dir):
+    project = _make_project(tmp_project_dir, tmp_videos_dir)
+    rel = project.rel_path(project.list_videos()[0].path)
+
+    assert project.overlapping_cuts(rel, 0.0, 5.0) == []
+
+
 def test_rename_label_propagates_to_annotation_file(tmp_project_dir, tmp_videos_dir):
     project = _make_project(tmp_project_dir, tmp_videos_dir)
     videos = project.list_videos()

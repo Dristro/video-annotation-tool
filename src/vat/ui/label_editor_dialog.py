@@ -129,6 +129,30 @@ class LabelEditorDialog(QDialog):
                 names.append(item.data(Qt.ItemDataRole.UserRole))
         return names
 
+    def _warn_if_shortcut_collides(self, shortcut: str, excluding_name: str | None = None) -> None:
+        """Non-blocking heads-up: two labels sharing a shortcut isn't
+        rejected (the shortcut field is otherwise freeform), but only one
+        QShortcut can ever fire for a given key combo -- whichever label
+        was registered last in MainWindow._register_label_shortcuts()
+        silently wins and the other's shortcut just never fires. Warn so
+        the user finds out here rather than by a shortcut mysteriously not
+        working later.
+        """
+        if not shortcut:
+            return
+        colliding = [
+            label.name
+            for label in self._project.config.labels
+            if label.shortcut == shortcut and label.name != excluding_name
+        ]
+        if colliding:
+            QMessageBox.warning(
+                self,
+                "Duplicate Shortcut",
+                f"'{shortcut}' is already used by: {', '.join(colliding)}. "
+                "Only one label's shortcut will actually respond to the key.",
+            )
+
     def _on_add(self) -> None:
         dialog = _LabelFormDialog(self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
@@ -140,6 +164,7 @@ class LabelEditorDialog(QDialog):
             except DuplicateLabelError as exc:
                 QMessageBox.warning(self, "Duplicate Label", str(exc))
                 return
+            self._warn_if_shortcut_collides(shortcut, excluding_name=name)
             self._refresh()
 
     def _on_edit(self) -> None:
@@ -160,6 +185,7 @@ class LabelEditorDialog(QDialog):
             except (DuplicateLabelError, LabelNotFoundError) as exc:
                 QMessageBox.warning(self, "Cannot Edit Label", str(exc))
                 return
+            self._warn_if_shortcut_collides(new_shortcut, excluding_name=new_name)
             self._refresh()
 
     def _on_remove(self) -> None:

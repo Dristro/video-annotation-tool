@@ -2,9 +2,9 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtCore import QEvent, QPointF, Qt  # noqa: E402
-from PySide6.QtGui import QMouseEvent  # noqa: E402
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtCore import QEvent, QPoint, QPointF, Qt  # noqa: E402
+from PySide6.QtGui import QHelpEvent, QMouseEvent  # noqa: E402
+from PySide6.QtWidgets import QApplication, QToolTip  # noqa: E402
 
 from vat.models.cut import Cut  # noqa: E402
 from vat.ui.timeline_widget import TimelineWidget  # noqa: E402
@@ -105,6 +105,36 @@ def test_single_click_on_cut_selects_it(timeline):
     timeline.mousePressEvent(_mouse_event(QEvent.Type.MouseButtonPress, x))
 
     assert selected == [cut.id]
+
+
+def test_hover_over_cut_shows_tooltip_with_scores(timeline, monkeypatch):
+    cut = Cut(start=1.0, end=2.0, label="goal", scores={"Technique": 87.5})
+    timeline.set_cuts([cut])
+
+    shown = []
+    monkeypatch.setattr(QToolTip, "showText", lambda pos, text, widget: shown.append(text))
+
+    x = int(timeline._x_for_time(1.5))
+    help_event = QHelpEvent(QEvent.Type.ToolTip, QPoint(x, 20), QPoint(x, 20))
+    timeline.event(help_event)
+
+    assert len(shown) == 1
+    assert "goal" in shown[0]
+    assert "Technique: 87.5" in shown[0]
+
+
+def test_hover_away_from_any_cut_does_not_show_tooltip(timeline, monkeypatch):
+    cut = Cut(start=1.0, end=2.0, label="goal")
+    timeline.set_cuts([cut])
+
+    shown = []
+    monkeypatch.setattr(QToolTip, "showText", lambda pos, text, widget: shown.append(text))
+
+    x = int(timeline._x_for_time(8.0))  # nowhere near the cut
+    help_event = QHelpEvent(QEvent.Type.ToolTip, QPoint(x, 20), QPoint(x, 20))
+    timeline.event(help_event)
+
+    assert shown == []
 
 
 def test_paints_without_error_for_continuation_cuts(timeline):

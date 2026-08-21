@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QRectF, Qt, Signal
+from PySide6.QtCore import QEvent, QRectF, Qt, Signal
 from PySide6.QtGui import QMouseEvent, QPainter, QPen
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QToolTip, QWidget
 
 from vat.models.cut import Cut
+from vat.ui.video_panel import format_time
 from vat.utils.colors import color_for_label, contrasting_text_color
 
 TRACK_HEIGHT = 28
@@ -97,6 +98,28 @@ class TimelineWidget(QWidget):
             playhead_x = self._x_for_time(self._position)
             painter.setPen(QPen(Qt.GlobalColor.red, 2))
             painter.drawLine(int(playhead_x), 0, int(playhead_x), self.height())
+
+    def event(self, event) -> bool:  # noqa: N802 (Qt override)
+        if event.type() == QEvent.Type.ToolTip:
+            cut = self._cut_at(event.pos().x())
+            if cut is not None:
+                QToolTip.showText(event.globalPos(), self._tooltip_text(cut), self)
+            else:
+                QToolTip.hideText()
+            return True
+        return super().event(event)
+
+    def _tooltip_text(self, cut: Cut) -> str:
+        # Score values aren't shown on the cut rectangles themselves (no
+        # room) -- only in the inspector's cuts list text. A hover tooltip
+        # surfaces them here too, per BACKLOG.md, without needing more
+        # on-timeline real estate.
+        lines = [f"{format_time(cut.start)} – {format_time(cut.end)}"]
+        if cut.label:
+            lines.append(cut.label)
+        for name, value in cut.scores.items():
+            lines.append(f"{name}: {value:g}")
+        return "\n".join(lines)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         self._dragging = True

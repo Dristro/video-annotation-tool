@@ -31,9 +31,6 @@ promise of order — just so nothing gets silently lost. Move items to
 
 ## Scores follow-ups
 
-- [ ] Score values aren't shown anywhere on the timeline visualization
-      (only in the inspector's cuts list text, e.g. "Technique=87.5,
-      Confidence=4"). Could add as a tooltip on hover.
 - [ ] "Edit Scores…" and "Edit Labels…" are separate dialogs/menu items;
       no single "Project Settings" dialog exists yet as project-level
       config surfaces grow (videos dir, project dir, labels, scoring are

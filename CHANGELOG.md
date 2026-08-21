@@ -5,6 +5,13 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added: score values on timeline hover tooltip
+
+- **Added**: hovering a cut on `TimelineWidget` now shows a tooltip with
+  its time range, label, and any recorded score values — previously
+  scores were only visible in the inspector's cuts list text.
+- 2 new tests (168 total).
+
 ### Added: delete confirmation, duplicate-shortcut warning, overlap warning
 
 - **Added**: deleting a cut now shows a Yes/No confirmation ("This cannot

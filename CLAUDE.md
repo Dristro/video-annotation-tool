@@ -450,8 +450,26 @@ schema) before implementing:
 - `main` is the development branch (default; everything lands here first).
 - `stable` (renamed from `prod`) is the "deployment" branch — for this
   project, deployment means the user running the app locally on their own
-  Mac. Merge `main` into `stable` only for versions considered
-  stable/run-worthy, not on every commit.
+  Mac. Merge `main` into `stable` **only when the user says so** — they've
+  been explicit each time ("main only, we'll copy it to stable once it's
+  tested and working") that new work sits on `main` for their own manual
+  testing first. Don't promote to `stable` on your own initiative just
+  because tests pass; that's a separate, user-triggered step.
+- The repo is on GitHub: `origin` ->
+  `https://github.com/Dristro/video-annotation-tool.git`, both `main` and
+  `stable` tracked. The user pushes; don't `git push` unless asked. A
+  `LICENSE` (MIT) exists at the repo root — the user added it directly on
+  GitHub, not through this codebase.
+- **Status as of 2026-08-22** (check `git log stable..main --oneline` for
+  the current truth — this note will go stale): `main` is 4 commits ahead
+  of `stable`, none yet promoted --
+  playlist-annotation-counts/single-scrub-control/timeline-double-click-edit/
+  label-contrast-fix/arrow-key-navigation-fix, cross-video continuing
+  annotations (REQUIREMENT.md #11), the play/pause button-resize fix +
+  notched playback-speed slider (REQUIREMENT.md #12), and the LICENSE
+  file. All are implemented, tested (152 tests passing at last count), and
+  verified via real launches, but are waiting on the user's own hands-on
+  testing before being merged into `stable`.
 - **`main` and `stable` each have their own `README.md`** (`main`'s is
   contributor-facing, `stable`'s is user-facing) -- this is deliberate, the
   project is meant to be pushed to GitHub for others to use and contribute

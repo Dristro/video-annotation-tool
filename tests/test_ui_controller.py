@@ -249,3 +249,78 @@ def test_navigate_up_down_steps_playlist(window):
     window._on_navigate_requested("down")
 
     assert calls == [-1, 1]
+
+
+@pytest.fixture
+def two_video_window(qapp, tmp_project_dir, tmp_path):
+    # Two real (empty) files so refresh_playlist()'s filesystem scan finds
+    # them and previous_path()/next_path() have something real to step
+    # between -- video_panel.load is stubbed so the row-0 auto-selection
+    # this triggers can't reach real MpvPlayer construction.
+    videos_dir = tmp_path / "videos"
+    videos_dir.mkdir()
+    (videos_dir / "a.mp4").write_bytes(b"")
+    (videos_dir / "b.mp4").write_bytes(b"")
+    project = Project.create(tmp_project_dir, str(videos_dir))
+    project.add_label("goal", "g")
+    win = MainWindow(project)
+    win.video_panel.load = lambda path: None
+    win.video_panel._duration = 300.0  # pretend a video is loaded and this long
+    win.refresh_playlist()
+    yield win
+    win.close()
+
+
+def test_continuation_full_flow_across_two_videos(two_video_window):
+    win = two_video_window
+
+    # -- Video A: mark in near the end, check "continues", add --
+    win._on_video_selected(win.playlist_panel.current_path())
+    win.inspector_panel.select_label("goal")
+    win.inspector_panel.set_pending_in(280.0)
+    win.inspector_panel._continues_checkbox.setChecked(True)
+
+    win._on_add_cut("goal")
+
+    cut_a = win.project.get_entry("a.mp4").cuts[0]
+    assert cut_a.end == 300.0  # forced to video A's duration, not a marked-out time
+    assert cut_a.continues_forward is True
+    assert cut_a.continuation_id is not None
+    assert "(1)" in win.playlist_panel._list.item(0).text()  # count updated too
+
+    # -- Video B: the banner should offer to complete it --
+    win.playlist_panel.select_relative(1)
+    win._on_video_selected(win.playlist_panel.current_path())
+
+    assert win.inspector_panel._pending_continuation_cut is not None
+    assert win.inspector_panel._pending_continuation_cut.id == cut_a.id
+
+    win.inspector_panel._on_start_continuation()
+    assert win.inspector_panel.pending_in() == 0.0
+    win.inspector_panel.set_pending_out(75.0)
+
+    win._on_add_cut("goal")
+
+    cut_b = win.project.get_entry("b.mp4").cuts[0]
+    assert cut_b.start == 0.0
+    assert cut_b.continuation_id == cut_a.continuation_id
+    assert cut_b.continues_forward is False
+
+    # Banner should be gone now that it's completed.
+    win._refresh_pending_continuation()
+    assert win.inspector_panel._pending_continuation_cut is None
+
+
+def test_continues_checkbox_disabled_on_last_video(two_video_window):
+    win = two_video_window
+    win.playlist_panel.select_relative(1)  # move to b.mp4, the last video
+    win._on_video_selected(win.playlist_panel.current_path())
+
+    assert win.inspector_panel._continues_checkbox.isEnabled() is False
+
+
+def test_continues_checkbox_enabled_when_not_last_video(two_video_window):
+    win = two_video_window
+    win._on_video_selected(win.playlist_panel.current_path())  # a.mp4, has a next video
+
+    assert win.inspector_panel._continues_checkbox.isEnabled() is True

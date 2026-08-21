@@ -65,9 +65,14 @@ class Project:
     def add_cut(
         self, rel_path: str, start: float, end: float, label: str = "",
         scores: dict[str, float] | None = None,
+        continuation_id: str | None = None, continues_forward: bool = False,
     ) -> Cut:
         return self.annotation_store.add_cut(
-            rel_path, Cut(start=start, end=end, label=label, scores=dict(scores or {}))
+            rel_path,
+            Cut(
+                start=start, end=end, label=label, scores=dict(scores or {}),
+                continuation_id=continuation_id, continues_forward=continues_forward,
+            ),
         )
 
     def update_cut(self, rel_path: str, cut_id: str, **kwargs) -> Cut:
@@ -91,6 +96,27 @@ class Project:
         if not self.config.scoring_enabled:
             return []
         return [defn.name for defn in self.config.score_definitions if defn.name not in cut.scores]
+
+    def pending_continuation(self, rel_path: str, previous_rel_path: str | None) -> Cut | None:
+        """If the previous video (by playlist order) has a cut marked
+        `continues_forward` that this video hasn't yet completed with a
+        matching `continuation_id`, return that front-half cut so the UI
+        can offer to complete it. None otherwise (no previous video, no
+        pending continuation, or it's already been completed).
+        """
+        if not previous_rel_path:
+            return None
+        previous_entry = self.get_entry(previous_rel_path)
+        if previous_entry is None:
+            return None
+        current_entry = self.get_entry(rel_path)
+        completed_ids = {
+            c.continuation_id for c in (current_entry.cuts if current_entry else []) if c.continuation_id
+        }
+        for cut in previous_entry.cuts:
+            if cut.continues_forward and cut.continuation_id and cut.continuation_id not in completed_ids:
+                return cut
+        return None
 
     # -- Labels ------------------------------------------------------------
     def add_label(self, name: str, shortcut: str = "", description: str = "") -> Label:

@@ -109,3 +109,57 @@ def test_rename_score_definition_propagates_to_annotation_file(tmp_project_dir, 
     assert project.get_entry(rel).cuts[0].scores == {"Skill": 87.5}
     assert project.config.find_score_definition("Skill") is not None
     assert project.config.find_score_definition("Technique") is None
+
+
+def test_pending_continuation_none_without_previous_video(tmp_project_dir, tmp_videos_dir):
+    project = _make_project(tmp_project_dir, tmp_videos_dir)
+    assert project.pending_continuation("a.mp4", None) is None
+
+
+def test_pending_continuation_none_when_previous_video_has_no_cuts(tmp_project_dir, tmp_videos_dir):
+    project = _make_project(tmp_project_dir, tmp_videos_dir)
+    assert project.pending_continuation("b.mp4", "a.mp4") is None
+
+
+def test_pending_continuation_found_when_previous_cut_continues_forward(tmp_project_dir, tmp_videos_dir):
+    project = _make_project(tmp_project_dir, tmp_videos_dir)
+    front_half = project.add_cut(
+        "a.mp4", 280.0, 300.0, "goal", continuation_id="link1", continues_forward=True
+    )
+
+    pending = project.pending_continuation("b.mp4", "a.mp4")
+
+    assert pending is not None
+    assert pending.id == front_half.id
+
+
+def test_pending_continuation_not_found_for_ordinary_cut(tmp_project_dir, tmp_videos_dir):
+    project = _make_project(tmp_project_dir, tmp_videos_dir)
+    project.add_cut("a.mp4", 1.0, 2.0, "goal")  # continues_forward=False by default
+
+    assert project.pending_continuation("b.mp4", "a.mp4") is None
+
+
+def test_pending_continuation_none_once_completed(tmp_project_dir, tmp_videos_dir):
+    project = _make_project(tmp_project_dir, tmp_videos_dir)
+    project.add_cut("a.mp4", 280.0, 300.0, "goal", continuation_id="link1", continues_forward=True)
+    # b.mp4 completes it with a matching continuation_id.
+    project.add_cut("b.mp4", 0.0, 75.0, "goal", continuation_id="link1", continues_forward=False)
+
+    assert project.pending_continuation("b.mp4", "a.mp4") is None
+
+
+def test_pending_continuation_chain_across_three_videos(tmp_project_dir, tmp_videos_dir):
+    # A single shared continuation_id propagated through a middle video's
+    # cut (both completing the link from A and continuing it into C) must
+    # still correctly link each adjacent pair.
+    project = _make_project(tmp_project_dir, tmp_videos_dir)
+    project.add_cut("a.mp4", 280.0, 300.0, "goal", continuation_id="chain1", continues_forward=True)
+    project.add_cut(
+        "b.mp4", 0.0, 60.0, "goal", continuation_id="chain1", continues_forward=True
+    )  # completes A, continues into the (hypothetical) video after b.mp4
+
+    assert project.pending_continuation("b.mp4", "a.mp4") is None  # already completed by b.mp4's cut
+    pending_for_c = project.pending_continuation("c.mp4", "b.mp4")
+    assert pending_for_c is not None
+    assert pending_for_c.continuation_id == "chain1"

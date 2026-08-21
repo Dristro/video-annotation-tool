@@ -51,6 +51,28 @@ promise of order — just so nothing gets silently lost. Move items to
       feature as requested (focused on filling in/correcting scores), but
       worth revisiting if re-timing existing cuts turns out to matter.
 
+## Cross-video continuation follow-ups
+
+- [ ] No way to break/undo a continuation link once completed, short of
+      deleting one of the two linked cuts. Deleting the front half leaves
+      the back half's `continuation_id` dangling (harmless -- it just
+      won't match anything -- but shown as "←continued" with nothing to
+      point to).
+- [ ] "Edit Annotation" can't change a cut's continuation status (start it
+      continuing, stop it continuing, or re-link it) -- that's only set at
+      creation time via the checkbox/banner. Same scoping decision as the
+      label+scores-only edit limitation above.
+- [ ] If a video somehow has *more than one* pending continuation from the
+      previous video (unusual, but the data model doesn't prevent it),
+      `pending_continuation()` only surfaces the first one found; the
+      others stay silently uncompletable via the banner (still doable
+      manually by setting the same continuation_id, just not through the
+      UI).
+- [ ] No visual distinction on the timeline for *which* other cut a →/←
+      marker links to -- with several continuing cuts in a project it's
+      not obvious which pairs go together beyond matching labels/timing
+      by eye.
+
 ## Correctness / robustness
 
 - [ ] Detect and warn on duplicate label shortcut keys (currently the last

@@ -75,6 +75,12 @@ class PlaylistPanel(QWidget):
             return self._paths_by_row[row + 1]
         return None
 
+    def previous_path(self) -> str | None:
+        row = self._list.currentRow()
+        if 0 <= row - 1 < len(self._paths_by_row):
+            return self._paths_by_row[row - 1]
+        return None
+
     def select_path(self, path: str) -> None:
         if path in self._paths_by_row:
             self._list.setCurrentRow(self._paths_by_row.index(path))

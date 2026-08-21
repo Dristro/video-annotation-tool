@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QDoubleValidator
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFormLayout,
     QGroupBox,
@@ -33,6 +34,17 @@ class InspectorPanel(QWidget):
     annotation (e.g. one missing a score that was added to the project
     later) gets filled in or corrected, rather than deleted and re-added.
 
+    An annotation can also span past this video's end into the next one
+    in the playlist: checking "Continues into next video" while adding one
+    marks it as the front half (its end becomes this video's own end
+    regardless of Mark Out) and remembers a fresh continuation id.
+    MainWindow tells this panel via set_pending_continuation() when the
+    *previous* video left an uncompleted front half for the current video
+    to complete; the banner's "Start Here" button pre-fills the label/
+    scores and Mark In = 0:00, remembering that continuation id so the
+    next Add Annotation completes it (continues_forward=False, same id)
+    instead of starting an unrelated new one.
+
     Pure view + signals; MainWindow owns all Project/annotation mutations.
     """
 
@@ -54,6 +66,8 @@ class InspectorPanel(QWidget):
         self._score_definitions: list[ScoreDefinition] = []
         self._score_inputs: dict[str, TransportLineEdit] = {}
         self._scoring_enabled = False
+        self._pending_continuation_cut: Cut | None = None
+        self._completing_continuation_id: str | None = None
 
         layout = QVBoxLayout(self)
 
@@ -63,6 +77,20 @@ class InspectorPanel(QWidget):
 
         self._mark_group = QGroupBox("New Annotation")
         mark_layout = QVBoxLayout(self._mark_group)
+
+        # Shown only when MainWindow finds an uncompleted continuation left
+        # by the previous video in the playlist. Hidden by default.
+        self._continuation_banner = QWidget()
+        banner_layout = QHBoxLayout(self._continuation_banner)
+        banner_layout.setContentsMargins(0, 0, 0, 0)
+        self._continuation_banner_label = QLabel("")
+        self._continuation_banner_label.setWordWrap(True)
+        banner_layout.addWidget(self._continuation_banner_label, stretch=1)
+        start_here_btn = QPushButton("Start Here")
+        start_here_btn.clicked.connect(self._on_start_continuation)
+        banner_layout.addWidget(start_here_btn)
+        self._continuation_banner.setVisible(False)
+        mark_layout.addWidget(self._continuation_banner)
 
         in_out_row = QHBoxLayout()
         self._mark_in_btn = QPushButton("Mark In (I)")
@@ -75,6 +103,10 @@ class InspectorPanel(QWidget):
 
         self._pending_label = QLabel("In: -- / Out: --")
         mark_layout.addWidget(self._pending_label)
+
+        self._continues_checkbox = QCheckBox("Continues into next video")
+        self._continues_checkbox.toggled.connect(self._refresh_button_states)
+        mark_layout.addWidget(self._continues_checkbox)
 
         label_row = QHBoxLayout()
         self._label_combo = QComboBox()
@@ -211,6 +243,48 @@ class InspectorPanel(QWidget):
                 continue
         return result
 
+    def set_continuation_allowed(self, allowed: bool) -> None:
+        """Disable the "continues into next video" checkbox when there's no
+        next video to continue into (e.g. this is the last one).
+        """
+        self._continues_checkbox.setEnabled(allowed)
+        if not allowed:
+            self._continues_checkbox.setChecked(False)
+
+    def set_pending_continuation(self, cut: Cut | None) -> None:
+        """Show/hide the "continuing from previous video" banner. `cut` is
+        the front-half cut left uncompleted by the previous video, or None
+        if there's nothing to complete for the current video.
+        """
+        self._pending_continuation_cut = cut
+        if cut is None:
+            self._continuation_banner.setVisible(False)
+            return
+        label_part = f" '{cut.label}'" if cut.label else ""
+        self._continuation_banner_label.setText(f"⚠ Continuing{label_part} from previous video")
+        self._continuation_banner.setVisible(True)
+
+    def wants_continues_forward(self) -> bool:
+        return self._continues_checkbox.isChecked()
+
+    def completing_continuation_id(self) -> str | None:
+        return self._completing_continuation_id
+
+    def _on_start_continuation(self) -> None:
+        cut = self._pending_continuation_cut
+        if cut is None:
+            return
+        self.select_label(cut.label)
+        for defn in self._score_definitions:
+            edit = self._score_inputs.get(defn.name)
+            if edit is None:
+                continue
+            value = cut.scores.get(defn.name)
+            edit.setText("" if value is None else f"{value:g}")
+        self._completing_continuation_id = cut.continuation_id
+        self.set_pending_in(0.0)
+        self.set_pending_out(None)
+
     def set_pending_in(self, seconds: float | None) -> None:
         self._pending_in = seconds
         self._refresh_pending_label()
@@ -228,6 +302,8 @@ class InspectorPanel(QWidget):
     def clear_pending(self) -> None:
         self._pending_in = None
         self._pending_out = None
+        self._completing_continuation_id = None
+        self._continues_checkbox.setChecked(False)
         for edit in self._score_inputs.values():
             edit.clear()
         self._refresh_pending_label()
@@ -255,11 +331,17 @@ class InspectorPanel(QWidget):
         scores_valid, error = self._scores_valid()
         self._score_error_label.setText(error)
 
-        in_out_valid = (
-            self._pending_in is not None
-            and self._pending_out is not None
-            and self._pending_out > self._pending_in
-        )
+        if self._continues_checkbox.isChecked():
+            # The end time isn't marked by the user for a continuing cut --
+            # MainWindow fills it in as this video's own duration -- so
+            # only Mark In is required here.
+            in_out_valid = self._pending_in is not None
+        else:
+            in_out_valid = (
+                self._pending_in is not None
+                and self._pending_out is not None
+                and self._pending_out > self._pending_in
+            )
         self._add_cut_btn.setEnabled(in_out_valid and scores_valid)
         self._edit_cut_btn.setEnabled(self.selected_cut_id() is not None and scores_valid)
 
@@ -276,7 +358,15 @@ class InspectorPanel(QWidget):
                 [d.name for d in score_definitions if d.name not in cut.scores] if scoring_enabled else []
             )
             incomplete_part = f"  ⚠ missing: {', '.join(missing)}" if missing else ""
-            text = f"{format_time(cut.start)} – {format_time(cut.end)}{label_part}{scores_part}{incomplete_part}"
+            continuation_part = ""
+            if cut.continues_forward:
+                continuation_part = "  →continues"
+            elif cut.continuation_id:
+                continuation_part = "  ←continued"
+            text = (
+                f"{format_time(cut.start)} – {format_time(cut.end)}{label_part}"
+                f"{scores_part}{incomplete_part}{continuation_part}"
+            )
             item = QListWidgetItem(text)
             self._cuts_list.addItem(item)
             self._cuts_by_row.append(cut)
@@ -341,6 +431,11 @@ class InspectorPanel(QWidget):
                 edit.clear()
         self._pending_in = None
         self._pending_out = None
+        # These belong to the "add a new / complete a continuation" flow,
+        # not "edit an existing cut" -- selecting an existing cut for
+        # editing shouldn't carry either over.
+        self._completing_continuation_id = None
+        self._continues_checkbox.setChecked(False)
         self._refresh_pending_label()
 
     def select_cut_by_id(self, cut_id: str) -> None:

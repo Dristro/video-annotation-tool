@@ -62,6 +62,23 @@ class TestCut:
         b = Cut(start=0, end=1)
         assert a.id != b.id
 
+    def test_continuation_fields_default(self):
+        cut = Cut(start=0, end=1)
+        assert cut.continuation_id is None
+        assert cut.continues_forward is False
+
+    def test_continuation_fields_round_trip(self):
+        cut = Cut(start=0, end=1, continuation_id="abc123", continues_forward=True)
+        restored = Cut.from_dict(cut.to_dict())
+        assert restored.continuation_id == "abc123"
+        assert restored.continues_forward is True
+
+    def test_continuation_fields_default_when_absent_from_dict(self):
+        # Older annotations.json files predate these fields entirely.
+        restored = Cut.from_dict({"id": "x", "start": 0, "end": 1, "label": ""})
+        assert restored.continuation_id is None
+        assert restored.continues_forward is False
+
 
 class TestVideoEntry:
     def test_default_not_annotated_no_cuts(self):

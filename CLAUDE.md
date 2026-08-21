@@ -369,6 +369,56 @@ label/scores doesn't change how many cuts exist). If you add another
 cut-mutating action, decide the same way: does the *count* change, not
 just the cut's contents?
 
+### Cross-video continuation (REQUIREMENT.md #11): a single shared id, matched one hop at a time
+
+Design chosen explicitly with the user (out of three options presented --
+simple visual flags only, this one, or a full multi-segment annotation
+schema) before implementing:
+
+- `Cut.continuation_id: str | None` + `Cut.continues_forward: bool`. A
+  front half (`continues_forward=True`) has a *fresh* id; a back half
+  (`continues_forward=False`, `continuation_id` set) carries the *same*
+  id as whatever front half it completes. See `models/cut.py`'s
+  docstring.
+- **`Project.pending_continuation(rel_path, previous_rel_path)`** is the
+  only piece of matching logic: does the *immediately preceding* video
+  (by playlist order) have a `continues_forward` cut whose
+  `continuation_id` doesn't yet appear in the current video's cuts? It
+  only ever looks one hop backward -- it does not walk an arbitrary chain.
+- **A single id can still correctly represent a 3+-video chain** without
+  any change to that one-hop matching logic: if a middle video's cut both
+  completes the link from the video before it *and* continues into the
+  video after it, `MainWindow._on_add_cut()` reuses the same
+  `continuation_id` (doesn't mint a new one) when `continues_forward` is
+  checked *and* `completing_continuation_id()` was already set. Since
+  matching is purely local (one hop, using whatever id happens to match),
+  propagating one id straight through every cut in the chain links each
+  adjacent pair correctly on its own -- there was no need to design a
+  separate multi-segment structure for this to work. Covered by
+  `test_pending_continuation_chain_across_three_videos`. If you ever
+  change `pending_continuation()` to look more than one hop ahead/behind,
+  re-verify this property still holds.
+- The front half's `end` is **not** something the user marks -- checking
+  "Continues into next video" in `InspectorPanel` relaxes
+  `_refresh_button_states()` to only require Mark In, and
+  `MainWindow._on_add_cut()` substitutes `video_panel.duration()` for the
+  end time. Whatever Mark Out happened to be set to is ignored in that
+  case.
+- The back half is started via `InspectorPanel._on_start_continuation()`
+  (the banner's "Start Here" button): pre-fills label/scores from the
+  front-half cut, sets Mark In = 0:00, and remembers
+  `completing_continuation_id` for the *next* Add Annotation to attach.
+  Selecting an *existing* cut for editing (a different flow, sharing the
+  same widgets) explicitly clears that remembered id --
+  `completing_continuation_id`/the checkbox belong to the add/complete
+  flow, not the edit-in-place flow.
+- `MainWindow._refresh_pending_continuation()` is called after
+  `_on_video_selected()` (video changed) and at the end of `_on_add_cut()`
+  (this add may have just completed the pending one) -- it's the only
+  place that recomputes whether the banner should show, and also disables
+  the checkbox via `set_continuation_allowed()` when there's no next
+  video to continue into.
+
 ## Branches
 
 - `main` is the development branch (default; everything lands here first).
@@ -425,7 +475,18 @@ python3 -m venv .venv
   `window.video_panel.load = lambda path: None` first so the row-0
   auto-selection cascade can't reach real player construction --
   `test_refresh_playlist_includes_annotation_counts` in
-  `test_ui_controller.py` is the reference example.
+  `test_ui_controller.py` is the reference example. For a test that needs
+  *two* real videos to step between (playlist navigation, cross-video
+  continuation), `two_video_window` in the same file is the reference
+  fixture.
+- **`QWidget.isVisible()` is `False` for everything until the top-level
+  window is actually `.show()`n** (which these tests never do -- no real
+  display). Don't assert on `.isVisible()` for a widget under test (e.g.
+  `InspectorPanel`'s continuation banner); assert on the underlying state
+  instead (`panel._pending_continuation_cut is not None`, the label
+  text, etc.). Reproduced this for real while writing the continuation
+  feature's manual verification script -- the banner's text was set
+  correctly but `.isVisible()` still read `False`.
 - Core logic (models, project_store, annotation_store, video_scanner,
   Project facade) has no Qt/mpv dependency and is straightforward to test
   directly — prefer adding coverage there over UI-level tests.

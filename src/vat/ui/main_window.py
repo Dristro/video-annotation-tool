@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QFileDialog, QMainWindow, QMessageBox, QSplitter, QVBoxLayout, QWidget
@@ -193,6 +195,7 @@ class MainWindow(QMainWindow):
         self.inspector_panel.set_video_name(rel)
         self.inspector_panel.clear_pending()
         self._refresh_cuts_and_status(rel)
+        self._refresh_pending_continuation()
 
         duration = probe_duration(path)
         if duration:
@@ -201,6 +204,23 @@ class MainWindow(QMainWindow):
         next_path = self.playlist_panel.next_path()
         if next_path:
             self._preloader.preload(next_path)
+
+    def _refresh_pending_continuation(self) -> None:
+        """Check whether the previous video (by playlist order) left an
+        annotation continuing into the current one still uncompleted, and
+        tell the inspector to show/hide its "Start Here" banner
+        accordingly. Also disables the "continues into next video"
+        checkbox when there's no next video to continue into.
+        """
+        if self._current_video_path is None:
+            self.inspector_panel.set_pending_continuation(None)
+            return
+        rel = self.project.rel_path(self._current_video_path)
+        previous_path = self.playlist_panel.previous_path()
+        previous_rel = self.project.rel_path(previous_path) if previous_path else None
+        pending = self.project.pending_continuation(rel, previous_rel)
+        self.inspector_panel.set_pending_continuation(pending)
+        self.inspector_panel.set_continuation_allowed(self.playlist_panel.next_path() is not None)
 
     def _refresh_cuts_and_status(self, rel: str) -> None:
         entry = self.project.get_entry(rel)
@@ -226,14 +246,37 @@ class MainWindow(QMainWindow):
             return
         rel = self.project.rel_path(self._current_video_path)
         start = self.inspector_panel.pending_in()
-        end = self.inspector_panel.pending_out()
+        continues_forward = self.inspector_panel.wants_continues_forward()
+        # A continuing cut's true end isn't something the user marks --
+        # it's however far this video actually runs; Mark Out is ignored
+        # (and not even required, see InspectorPanel._refresh_button_states)
+        # when the checkbox is checked.
+        end = self.video_panel.duration() if continues_forward else self.inspector_panel.pending_out()
         if start is None or end is None or end <= start:
             return
         scores = self.inspector_panel.pending_scores()
-        self.project.add_cut(rel, start, end, label, scores)
+        # completing_continuation_id() is set when this Add Annotation is
+        # finishing the back half of a continuation started in the
+        # previous video (via the "Start Here" banner). If continues_forward
+        # is *also* checked, this same cut continues further into the video
+        # after this one -- reuse the same id rather than minting a new one:
+        # pending_continuation() only ever checks one hop of adjacency at a
+        # time, so propagating a single shared id through every cut in a
+        # 3+-video chain still links each adjacent pair correctly, and a
+        # fresh id here would silently sever the chain at this cut instead.
+        # A fresh id is only needed when this cut isn't completing anything
+        # (the start of a new chain).
+        continuation_id = self.inspector_panel.completing_continuation_id()
+        if continues_forward and continuation_id is None:
+            continuation_id = uuid.uuid4().hex
+        self.project.add_cut(
+            rel, start, end, label, scores,
+            continuation_id=continuation_id, continues_forward=continues_forward,
+        )
         self.inspector_panel.clear_pending()
         self._refresh_cuts_and_status(rel)
         self.refresh_playlist()  # annotation count for this video just changed
+        self._refresh_pending_continuation()  # this add may have just completed one
 
     def _on_edit_cut(self, label: str) -> None:
         if self._current_video_path is None:

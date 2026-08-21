@@ -47,6 +47,13 @@ time.
     current label and scores into the same input area used to add a new one, so the user can
     fill in what's missing or correct what's there, then save the change back onto that same
     annotation.
+11. Annotations spanning across a video boundary: an annotation may continue past the end of
+    one video into the start of the next video in the playlist (e.g. an event that's still
+    happening when the clip cuts off). Marking a cut as "continues into next video" links it
+    to a completion in the following video: that video's annotation form offers to start a
+    matching annotation (same label/scores, pre-filled) beginning at 0:00, which the user
+    finishes by marking where it actually ends. The two halves are linked, not independent --
+    but nothing is enforced or auto-created without the user opting in on each end.
 
 
 ## Non-functional requirements
@@ -109,3 +116,15 @@ time.
   it in if they choose to, without anything being enforced.
 * A score may have a description (free text) explaining what it means, editable alongside its name/
   range/dtype in the score editor.
+
+### Cross-video continuation:
+* Two cuts, in adjacent videos in the playlist, linked as the two halves of one annotation that
+  didn't fit inside a single video file.
+* The front half (in the earlier video) is marked "continues into next video"; its end time is
+  the video's own end, not something the user marks. The back half (in the following video)
+  starts at 0:00 and is completed by the user marking where the annotation actually ends.
+* The link is opt-in on both ends -- checking "continues" on the front half only offers a
+  starting point in the next video (pre-filled label/scores, ready to complete); nothing is
+  auto-created or enforced until the user actually completes it there.
+* A chain can span more than two videos: the middle video's cut can simultaneously complete the
+  link from the video before it and continue the link into the video after it.

@@ -105,3 +105,12 @@ def test_single_click_on_cut_selects_it(timeline):
     timeline.mousePressEvent(_mouse_event(QEvent.Type.MouseButtonPress, x))
 
     assert selected == [cut.id]
+
+
+def test_paints_without_error_for_continuation_cuts(timeline):
+    front_half = Cut(start=8.0, end=10.0, label="goal", continuation_id="link1", continues_forward=True)
+    back_half = Cut(start=0.0, end=2.0, label="goal", continuation_id="link1", continues_forward=False)
+    timeline.set_cuts([front_half, back_half])
+    timeline.show()  # a real paintEvent only fires once the widget is shown
+
+    timeline.repaint()  # must not raise

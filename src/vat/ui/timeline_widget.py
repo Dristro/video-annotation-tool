@@ -82,9 +82,16 @@ class TimelineWidget(QWidget):
             painter.setBrush(color)
             painter.setPen(QPen(color.darker(150)))
             painter.drawRoundedRect(rect, 2, 2)
-            if cut.label:
+            if cut.label or cut.continuation_id:
+                # "->" marks the front half (continues into the next
+                # video), "<-" marks the back half (continued from the
+                # previous one) -- see Cut.continuation_id's docstring.
+                prefix = "← " if cut.continuation_id and not cut.continues_forward else ""
+                suffix = " →" if cut.continues_forward else ""
                 painter.setPen(QPen(contrasting_text_color(color)))
-                painter.drawText(rect.adjusted(3, 0, -3, 0), Qt.AlignmentFlag.AlignVCenter, cut.label)
+                painter.drawText(
+                    rect.adjusted(3, 0, -3, 0), Qt.AlignmentFlag.AlignVCenter, f"{prefix}{cut.label}{suffix}"
+                )
 
         if self._duration > 0:
             playhead_x = self._x_for_time(self._position)

@@ -65,3 +65,19 @@ def test_select_relative_on_empty_list_is_a_noop(qapp):
     panel.set_videos([], {})
     panel.select_relative(1)  # must not raise
     assert panel.current_path() is None
+
+
+def test_next_and_previous_path(qapp):
+    panel = PlaylistPanel()
+    panel.set_videos(_videos("a.mp4", "b.mp4", "c.mp4"), {})
+    assert panel.current_path() == "/videos/a.mp4"
+    assert panel.previous_path() is None  # nothing before the first video
+    assert panel.next_path() == "/videos/b.mp4"
+
+    panel.select_relative(1)
+    assert panel.previous_path() == "/videos/a.mp4"
+    assert panel.next_path() == "/videos/c.mp4"
+
+    panel.select_relative(1)
+    assert panel.previous_path() == "/videos/b.mp4"
+    assert panel.next_path() is None  # nothing after the last video

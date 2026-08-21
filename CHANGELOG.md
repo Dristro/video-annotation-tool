@@ -5,6 +5,42 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added: cross-video continuing annotations (REQUIREMENT.md #11, `main`
+only)
+
+- An annotation can now continue past one video's end into the start of
+  the next video in the playlist. Checking "Continues into next video"
+  while adding a cut marks it as the front half (its end becomes this
+  video's own end automatically -- Mark Out is no longer required, or
+  used, when this is checked) and mints a shared link id. Opening the
+  following video shows a banner ("⚠ Continuing 'goal' from previous
+  video") with a "Start Here" button that pre-fills the label/scores and
+  sets Mark In to 0:00; the user marks where it actually ends and clicks
+  Add Annotation to complete the link.
+- Both ends are opt-in -- nothing is auto-created; the link only exists
+  once the user completes it on the following video.
+- Chains across 3+ videos work without any extra structure: a middle
+  video's cut can simultaneously complete the incoming link and continue
+  it forward, by reusing (not regenerating) the same link id -- the
+  matching logic (`Project.pending_continuation`) only ever checks one
+  hop of playlist adjacency at a time, so one shared id threaded through
+  every cut in the chain still links each adjacent pair correctly.
+- `Cut` gained `continuation_id`/`continues_forward`; the timeline and
+  cuts list show a →/← marker on linked cuts.
+- Design (three options: simple visual flags only, this linked
+  carry-forward approach, or a full multi-segment annotation schema) was
+  confirmed with the user before implementing.
+- 21 new tests (141 total): `Cut` continuation fields, `Project
+  .pending_continuation()` (including the 3-video chain case),
+  `PlaylistPanel.previous_path()`/`next_path()`, `InspectorPanel`'s
+  checkbox/banner/prefill behavior, and a full `MainWindow`-level
+  two-video flow.
+- Verified end-to-end via a scripted (non-pytest) run against real files
+  with `video_panel.load` stubbed, after first reproducing and fixing a
+  bug in the verification script itself (not the source) where
+  `_on_add_cut`'s own `refresh_playlist()` call was wiping out a
+  synthetically-injected playlist mid-test.
+
 ### Added/Changed: playlist counts, single scrub control, timeline
 double-click edit, contrast fix, arrow-key bug fix (`main` only --
 not yet promoted to `stable`)

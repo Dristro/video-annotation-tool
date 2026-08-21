@@ -24,8 +24,6 @@ promise of order — just so nothing gets silently lost. Move items to
       every affected cut to undo cleanly. `_on_break_continuation()` also
       isn't on the undo stack yet.
 
-## Scores follow-ups
-
 ## Cross-video continuation follow-ups
 
 - [ ] Breaking a continuation link (via the "Break Continuation Link"
@@ -33,6 +31,7 @@ promise of order — just so nothing gets silently lost. Move items to
       *starting* a new one is still only possible at creation time via the
       checkbox/banner, and there's no way to re-link a cut to a
       *different* other cut once broken (only delete + re-add).
+
 ## Correctness / robustness
 
 - [ ] `video_scanner.list_videos` only scans the top level of the videos

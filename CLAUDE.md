@@ -307,10 +307,27 @@ explicitly pressed "mark annotated". Adding cuts alone does not flip
 ## Branches
 
 - `main` is the development branch (default; everything lands here first).
-- `prod` is the "deployment" branch — for this project, deployment means the
-  user running the app locally on their own Mac. Merge `main` into `prod`
-  (fast-forward when possible) only for versions considered
+- `stable` (renamed from `prod`) is the "deployment" branch — for this
+  project, deployment means the user running the app locally on their own
+  Mac. Merge `main` into `stable` only for versions considered
   stable/run-worthy, not on every commit.
+- **`main` and `stable` each have their own `README.md`** (`main`'s is
+  contributor-facing, `stable`'s is user-facing) -- this is deliberate, the
+  project is meant to be pushed to GitHub for others to use and contribute
+  to, and those are different audiences with different needs. The
+  consequence: promoting `main` into `stable` is **no longer a plain
+  fast-forward** (that only worked while the branches were identical) --
+  it's a real merge that will conflict on `README.md` every time. Resolve
+  by keeping `stable`'s own README and taking everything else from `main`:
+  ```bash
+  git checkout stable
+  git merge main
+  git checkout --ours README.md   # keep stable's own README
+  git add README.md
+  git commit
+  ```
+  Every other file should merge cleanly and stay in sync between the two
+  branches; only `README.md` is intentionally exempt from that.
 
 ## Running things
 

@@ -53,6 +53,44 @@ def test_no_thumbnail_icon_when_missing(qapp):
     assert panel._list.item(0).icon().isNull() is True
 
 
+def test_set_thumbnail_updates_icon_for_matching_row(qapp, tmp_path):
+    thumb_path = tmp_path / "thumb.jpg"
+    QPixmap(4, 4).save(str(thumb_path), "JPG")
+
+    panel = PlaylistPanel()
+    panel.set_videos(_videos("a.mp4", "b.mp4"), {})
+    assert panel._list.item(1).icon().isNull() is True
+
+    panel.set_thumbnail("b.mp4", str(thumb_path))
+
+    assert panel._list.item(1).icon().isNull() is False
+    assert panel._list.item(0).icon().isNull() is True  # unrelated row untouched
+
+
+def test_set_thumbnail_does_not_change_selection(qapp, tmp_path):
+    thumb_path = tmp_path / "thumb.jpg"
+    QPixmap(4, 4).save(str(thumb_path), "JPG")
+
+    panel = PlaylistPanel()
+    panel.set_videos(_videos("a.mp4", "b.mp4"), {})
+    panel.select_relative(1)
+    assert panel.current_path() == "/videos/b.mp4"
+    selections = []
+    panel.video_selected.connect(selections.append)
+
+    panel.set_thumbnail("a.mp4", str(thumb_path))
+
+    assert panel.current_path() == "/videos/b.mp4"
+    assert selections == []  # setting an icon must never re-trigger video_selected
+
+
+def test_set_thumbnail_unknown_rel_path_is_a_noop(qapp):
+    panel = PlaylistPanel()
+    panel.set_videos(_videos("a.mp4"), {})
+
+    panel.set_thumbnail("does-not-exist.mp4", "/some/path.jpg")  # must not raise
+
+
 def test_select_relative_steps_through_list(qapp):
     panel = PlaylistPanel()
     panel.set_videos(_videos("a.mp4", "b.mp4", "c.mp4"), {})

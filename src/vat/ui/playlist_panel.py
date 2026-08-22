@@ -25,6 +25,7 @@ class PlaylistPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._paths_by_row: list[str] = []
+        self._rel_paths_by_row: list[str] = []
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
@@ -49,6 +50,7 @@ class PlaylistPanel(QWidget):
         self._list.blockSignals(True)
         self._list.clear()
         self._paths_by_row = []
+        self._rel_paths_by_row = []
         restore_row = -1
         for video in videos:
             annotated = annotated_flags.get(video.rel_path, False)
@@ -62,6 +64,7 @@ class PlaylistPanel(QWidget):
                 item.setIcon(QIcon(thumbnail_path))
             self._list.addItem(item)
             self._paths_by_row.append(video.path)
+            self._rel_paths_by_row.append(video.rel_path)
             if video.path == current_path:
                 restore_row = len(self._paths_by_row) - 1
         self._list.blockSignals(False)
@@ -69,6 +72,18 @@ class PlaylistPanel(QWidget):
             self._list.setCurrentRow(restore_row)
         elif self._paths_by_row:
             self._list.setCurrentRow(0)
+
+    def set_thumbnail(self, rel_path: str, thumbnail_path: str) -> None:
+        """Set a single row's icon in place, without rebuilding the list --
+        thumbnails now arrive asynchronously, one at a time, well after
+        set_videos() already ran (ThumbnailLoader); rebuilding the whole
+        list per arrival would re-fire currentRowChanged (reloading the
+        selected video) for no reason on every single thumbnail.
+        """
+        if rel_path not in self._rel_paths_by_row:
+            return
+        row = self._rel_paths_by_row.index(rel_path)
+        self._list.item(row).setIcon(QIcon(thumbnail_path))
 
     def current_path(self) -> str | None:
         row = self._list.currentRow()

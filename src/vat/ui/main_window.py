@@ -10,9 +10,9 @@ from PySide6.QtWidgets import QFileDialog, QMainWindow, QMessageBox, QSplitter, 
 from vat import app_settings
 from vat.constants import THUMBNAILS_DIR_NAME, WAVEFORMS_DIR_NAME
 from vat.errors import CutNotFoundError
-from vat.media.thumbnails import get_or_create_thumbnail
 from vat.media.video_scanner import probe_duration
 from vat.playback.preloader import Preloader
+from vat.playback.thumbnail_loader import ThumbnailLoader
 from vat.playback.waveform_loader import WaveformLoader
 from vat.project.project import Project
 from vat.project.undo_stack import Command, UndoStack
@@ -40,6 +40,8 @@ class MainWindow(QMainWindow):
         self._preloader = Preloader()
         self._waveform_loader = WaveformLoader()
         self._waveform_loader.loaded.connect(self._on_waveform_loaded)
+        self._thumbnail_loader = ThumbnailLoader()
+        self._thumbnail_loader.loaded.connect(self._on_thumbnail_loaded)
         # Covers cut add/edit/delete only, not label/score renames --
         # those propagate across every video's cuts (rename_*_everywhere)
         # and would need a full before/after snapshot of every affected
@@ -204,20 +206,28 @@ class MainWindow(QMainWindow):
         videos = self.project.list_videos()
         annotated_flags = {v.rel_path: self.project.is_annotated(v.rel_path) for v in videos}
         cut_counts = {}
-        thumbnails = {}
-        thumbnails_dir = os.path.join(self.project.config.project_dir, THUMBNAILS_DIR_NAME)
         for v in videos:
             entry = self.project.get_entry(v.rel_path)
             if entry:
                 cut_counts[v.rel_path] = len(entry.cuts)
-            # Cached on disk after the first call (media.thumbnails), so
-            # this is only slow the first time each video is seen -- same
-            # best-effort spirit as Preloader; None (extraction failed) is
-            # simply omitted rather than treated as an error.
-            thumbnail_path = get_or_create_thumbnail(v.path, thumbnails_dir)
-            if thumbnail_path:
-                thumbnails[v.rel_path] = thumbnail_path
-        self.playlist_panel.set_videos(videos, annotated_flags, cut_counts, thumbnails)
+        # No thumbnails passed here -- ThumbnailLoader fills them in
+        # asynchronously via set_thumbnail() below (per row, as each one
+        # arrives) rather than this blocking on ffmpeg for any video that
+        # isn't already cached. refresh_playlist() fires on nearly every
+        # mutating action (add/edit/delete a cut, mark annotated, ...),
+        # not just project open, so it must never itself do slow work --
+        # doing thumbnail extraction inline here used to hang the UI for
+        # several seconds on "Mark Annotated" (reported as a real bug),
+        # worse yet on every retry if a video's thumbnail extraction kept
+        # failing (no cache file ever got written, so it retried every
+        # single call).
+        self.playlist_panel.set_videos(videos, annotated_flags, cut_counts)
+        thumbnails_dir = os.path.join(self.project.config.project_dir, THUMBNAILS_DIR_NAME)
+        self._thumbnail_loader.load_missing(videos, thumbnails_dir)
+
+    def _on_thumbnail_loaded(self, rel_path: str, thumbnail_path: str) -> None:
+        if thumbnail_path:
+            self.playlist_panel.set_thumbnail(rel_path, thumbnail_path)
 
     def _on_video_selected(self, path: str) -> None:
         self._current_video_path = path

@@ -532,6 +532,40 @@ def test_open_recent_switches_project(window, monkeypatch, tmp_path):
     assert window.project.config.project_dir == project_a.config.project_dir
 
 
+def test_refresh_playlist_does_not_extract_thumbnails_synchronously(window, monkeypatch):
+    # Regression test: refresh_playlist() used to call get_or_create_thumbnail()
+    # (an ffmpeg subprocess) inline for every video, on the main thread. That
+    # blocked the UI on every mutating action (Mark Annotated, add/edit/delete
+    # a cut, ...) that calls refresh_playlist(), not just on project open --
+    # reported as a real hang with the spinning-wait cursor. Thumbnail
+    # extraction must only ever happen via ThumbnailLoader's background thread,
+    # never inline on the thread that called refresh_playlist().
+    import threading
+
+    from vat.playback import thumbnail_loader as thumbnail_loader_module
+
+    calling_threads = []
+
+    def _record_and_return(video_path, cache_dir):
+        calling_threads.append(threading.current_thread())
+        return None
+
+    monkeypatch.setattr(thumbnail_loader_module, "get_or_create_thumbnail", _record_and_return)
+
+    open(os.path.join(window.project.config.videos_dir, "a.mp4"), "wb").close()
+    window.video_panel.load = lambda path: None
+
+    window.refresh_playlist()
+
+    import time
+
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and not calling_threads:
+        QApplication.processEvents()
+    assert calling_threads  # extraction did happen (just not on the caller's thread)
+    assert threading.main_thread() not in calling_threads
+
+
 def test_refresh_playlist_includes_annotation_counts(window):
     # refresh_playlist() needs a real file for its filesystem scan
     # (project.list_videos()) to find -- but populating the playlist also

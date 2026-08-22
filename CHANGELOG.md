@@ -5,6 +5,27 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed: "Mark Annotated" (and other actions) hanging on thumbnail extraction
+
+- **Fixed**: `refresh_playlist()` used to call `get_or_create_thumbnail()`
+  (an `ffmpeg` subprocess) inline, synchronously, for every video in the
+  playlist. That's fine once a thumbnail is cached, but the *first*
+  extraction blocks on the subprocess, and a video ffmpeg can't
+  thumbnail never gets a cache file written — so it retried the same
+  doomed extraction on *every* `refresh_playlist()` call, which fires on
+  nearly every mutating action (add/edit/delete a cut, mark annotated,
+  ...), not just project open. Reported as a real bug: clicking "Mark
+  Annotated" produced a multi-second hang with the spinning-wait cursor.
+  Thumbnail extraction now runs entirely on a background thread
+  (`playback/thumbnail_loader.py`, `ThumbnailLoader`), same pattern as
+  `WaveformLoader` — already-cached thumbnails are still reported
+  immediately (a cheap file-exists check), only genuinely missing ones go
+  through a thread. `PlaylistPanel.set_thumbnail()` updates one row's icon
+  in place as each result arrives, instead of `refresh_playlist()`
+  rebuilding the whole list per thumbnail (which would have re-fired
+  `currentRowChanged` — reloading the selected video — on every arrival).
+- 7 new tests (260 total).
+
 ### Added: waveform preview under the timeline
 
 - **Added**: `TimelineWidget` now shows a waveform strip beneath the cuts

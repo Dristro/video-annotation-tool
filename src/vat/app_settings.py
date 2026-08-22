@@ -34,6 +34,20 @@ def load_recent_project_dirs() -> list[str]:
     return list(_load_settings().get("recent_project_dirs", []))
 
 
+def load_theme() -> str:
+    # A global (not per-project) preference on purpose -- the user asked
+    # for it to persist across projects/sessions in the same place the
+    # rest of this file already lives (~/Library/Application Support/vat/
+    # settings.json), rather than in any single project's project.json.
+    return _load_settings().get("theme", "dark")
+
+
+def save_theme(theme: str) -> None:
+    data = _load_settings()
+    data["theme"] = theme
+    _save_settings(data)
+
+
 def save_last_project_dir(project_dir: str) -> None:
     # Merge into whatever's already on disk (read-modify-write) rather than
     # overwriting the whole file -- this is the one place a project is

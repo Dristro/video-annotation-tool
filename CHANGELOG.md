@@ -5,6 +5,25 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added: light/dark theme toggle, saved as a global preference
+
+- **Added**: View > Theme now offers Dark/Light as a real user choice
+  instead of always forcing dark. `vat/ui/theme.py` holds
+  `apply_dark_theme()`/`apply_light_theme()`/`apply_theme()` (moved out of
+  `app.py`, which previously hardcoded dark unconditionally, so
+  `MainWindow` can apply a change live without a circular import). Both
+  themes use Qt's "Fusion" style — the one that actually honors a custom
+  `QPalette` — so switching between them is a full, deterministic palette
+  replacement each time.
+- **Added**: the choice is saved via two new `app_settings` functions,
+  `load_theme()`/`save_theme()`, in the same global, per-machine (not
+  per-project) `~/Library/Application Support/vat/settings.json` that
+  already stores the last-opened/recent project list — a deliberate
+  choice per explicit request, not `project.json`, so the preference
+  follows the user across every project, not just the one open when they
+  changed it.
+- 20 new tests (272 total).
+
 ### Fixed: "Mark Annotated" (and other actions) hanging on thumbnail extraction
 
 - **Fixed**: `refresh_playlist()` used to call `get_or_create_thumbnail()`

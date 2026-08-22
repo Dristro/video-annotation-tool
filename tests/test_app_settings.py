@@ -44,3 +44,19 @@ def test_recent_project_dirs_capped(monkeypatch):
         app_settings.save_last_project_dir(f"/tmp/{i}")
     assert len(app_settings.load_recent_project_dirs()) == 3
     assert app_settings.load_recent_project_dirs() == ["/tmp/4", "/tmp/3", "/tmp/2"]
+
+
+def test_load_theme_defaults_to_dark_when_missing():
+    assert app_settings.load_theme() == "dark"
+
+
+def test_save_and_load_theme():
+    app_settings.save_theme("light")
+    assert app_settings.load_theme() == "light"
+
+
+def test_save_theme_does_not_clobber_other_settings():
+    app_settings.save_last_project_dir("/tmp/project-a")
+    app_settings.save_theme("light")
+    assert app_settings.load_last_project_dir() == "/tmp/project-a"
+    assert app_settings.load_theme() == "light"

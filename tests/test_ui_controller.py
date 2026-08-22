@@ -13,6 +13,7 @@ import pytest
 
 pytest.importorskip("PySide6")
 
+from PySide6.QtGui import QPalette  # noqa: E402
 from PySide6.QtWidgets import QApplication, QMessageBox  # noqa: E402
 
 from vat.project.project import Project  # noqa: E402
@@ -487,6 +488,36 @@ def test_undo_after_switching_videos_does_not_crash_and_still_applies(window):
 
     entry = window.project.get_entry("a.mp4")
     assert entry is None or entry.cuts == []
+
+
+def test_theme_menu_defaults_to_saved_preference(qapp, tmp_project_dir, tmp_path, monkeypatch):
+    from vat import app_settings
+
+    monkeypatch.setattr(app_settings, "_settings_path", lambda: tmp_path / "settings.json")
+    app_settings.save_theme("light")
+
+    empty_videos_dir = tmp_path / "videos"
+    empty_videos_dir.mkdir()
+    project = Project.create(tmp_project_dir, str(empty_videos_dir))
+    project.add_label("goal", "g")
+    win = MainWindow(project)
+    try:
+        assert win._theme_actions["light"].isChecked() is True
+        assert win._theme_actions["dark"].isChecked() is False
+    finally:
+        win.close()
+
+
+def test_set_theme_applies_and_saves(window, monkeypatch, tmp_path):
+    from vat import app_settings
+
+    monkeypatch.setattr(app_settings, "_settings_path", lambda: tmp_path / "settings.json")
+
+    window._on_set_theme("light")
+
+    assert app_settings.load_theme() == "light"
+    window_color = QApplication.instance().palette().color(QPalette.ColorRole.Window)
+    assert window_color.lightness() >= 128
 
 
 def test_switch_project_updates_recent_menu(window, monkeypatch, tmp_path):

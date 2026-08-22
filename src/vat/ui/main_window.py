@@ -4,8 +4,8 @@ import os
 import uuid
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QKeySequence, QShortcut
-from PySide6.QtWidgets import QFileDialog, QMainWindow, QMessageBox, QSplitter, QVBoxLayout, QWidget
+from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QShortcut
+from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMessageBox, QSplitter, QVBoxLayout, QWidget
 
 from vat import app_settings
 from vat.constants import THUMBNAILS_DIR_NAME, WAVEFORMS_DIR_NAME
@@ -19,6 +19,7 @@ from vat.project.undo_stack import Command, UndoStack
 from vat.ui.inspector_panel import InspectorPanel
 from vat.ui.playlist_panel import PlaylistPanel
 from vat.ui.project_settings_dialog import ProjectSettingsDialog
+from vat.ui.theme import apply_theme
 from vat.ui.timeline_widget import TimelineWidget
 from vat.ui.video_panel import VideoPanel
 
@@ -133,6 +134,20 @@ class MainWindow(QMainWindow):
         edit_menu.addSeparator()
         project_settings_action = edit_menu.addAction("Project Settings…")
         project_settings_action.triggered.connect(self._on_open_project_settings)
+
+        view_menu = self.menuBar().addMenu("&View")
+        theme_menu = view_menu.addMenu("Theme")
+        theme_group = QActionGroup(self)
+        theme_group.setExclusive(True)
+        self._theme_actions: dict[str, QAction] = {}
+        current_theme = app_settings.load_theme()
+        for theme_name, label in (("dark", "Dark"), ("light", "Light")):
+            action = theme_menu.addAction(label)
+            action.setCheckable(True)
+            action.setChecked(theme_name == current_theme)
+            theme_group.addAction(action)
+            action.triggered.connect(lambda checked=False, t=theme_name: self._on_set_theme(t))
+            self._theme_actions[theme_name] = action
 
     # -- Signal wiring ------------------------------------------------------------
     def _wire_signals(self) -> None:
@@ -464,6 +479,18 @@ class MainWindow(QMainWindow):
 
     def _on_redo(self) -> None:
         self._undo_stack.redo()
+
+    def _on_set_theme(self, theme: str) -> None:
+        # A global preference, not a per-project one -- saved to
+        # app_settings' shared settings.json (~/Library/Application
+        # Support/vat/) rather than this project's project.json, so it
+        # carries over across every project the user opens, not just this
+        # one. QApplication.instance() rather than a stored reference:
+        # MainWindow never held one, and there's exactly one per process.
+        app = QApplication.instance()
+        if app is not None:
+            apply_theme(app, theme)
+        app_settings.save_theme(theme)
 
     def _on_break_continuation(self, cut_id: str) -> None:
         if self._current_video_path is None:

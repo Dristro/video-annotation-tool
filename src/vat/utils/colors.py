@@ -19,3 +19,15 @@ def color_for_label(label: str) -> QColor:
     digest = hashlib.sha1(label.encode("utf-8")).hexdigest()
     index = int(digest, 16) % len(_PALETTE)
     return QColor(_PALETTE[index])
+
+
+def contrasting_text_color(background: QColor) -> QColor:
+    """Black or white, whichever reads better on `background`.
+
+    Several palette entries (e.g. the light yellow-green, pink, lavender)
+    are too light for hardcoded white label text to stay readable -- this
+    picks based on perceptual luminance (YIQ formula) instead of assuming
+    a dark background every time.
+    """
+    yiq = (background.red() * 299 + background.green() * 587 + background.blue() * 114) / 1000
+    return QColor("black") if yiq >= 128 else QColor("white")

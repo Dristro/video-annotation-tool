@@ -47,6 +47,21 @@ time.
     current label and scores into the same input area used to add a new one, so the user can
     fill in what's missing or correct what's there, then save the change back onto that same
     annotation.
+11. Annotations spanning across a video boundary: an annotation may continue past the end of
+    one video into the start of the next video in the playlist (e.g. an event that's still
+    happening when the clip cuts off). Marking a cut as "continues into next video" links it
+    to a completion in the following video: that video's annotation form offers to start a
+    matching annotation (same label/scores, pre-filled) beginning at 0:00, which the user
+    finishes by marking where it actually ends. The two halves are linked, not independent --
+    but nothing is enforced or auto-created without the user opting in on each end.
+12. Playback speed control: a notched (discrete-step) speed slider, placed inline with the
+    play/pause button and the elapsed-time display, lets the user change playback speed (e.g.
+    0.25x-2x) while reviewing a video. Snaps to a fixed set of speed steps rather than an
+    arbitrary continuous value.
+13. Justification/description (optional, per-cut): alongside the label and scores, a cut may
+    have a free-text justification/description explaining it. Always optional -- unlike scores,
+    it is a single plain field, not a project-configurable set, and it is never required
+    regardless of whether scoring is enabled or how many scores are defined.
 
 
 ## Non-functional requirements
@@ -60,7 +75,13 @@ time.
 7. Maintain under 4GB RAM usage at all times. If pre-loading a video doesn't fit in RAM, try
    fetching a starting chunk and load remaining after video is loaded into rendering region.
 8. Fast, snappy clip generation.
-9. Easy to distinguish annotated and non-annotated videos
+9. Easy to distinguish annotated and non-annotated videos, and at a glance how many
+   annotations each video already has.
+10. Keyboard playback/navigation shortcuts (seek left/right, step to the previous/next
+    video up/down) must keep working regardless of which widget currently has focus --
+    including while a data entry field (e.g. a score box) is focused. A data entry field
+    may still consume other keys normally (typing digits, etc.); only these navigation
+    keys are guaranteed to always reach transport/playlist control instead.
 
 ## Definitions
 
@@ -103,3 +124,21 @@ time.
   it in if they choose to, without anything being enforced.
 * A score may have a description (free text) explaining what it means, editable alongside its name/
   range/dtype in the score editor.
+
+### Justification / Description:
+* An optional, always-optional free-text field on a cut, alongside its label and scores.
+* Unlike scores, it is not a project-configurable set of named fields -- there is exactly one such
+  field per cut, with no enable/disable setting and no per-project definitions list.
+* Never required to add or edit a cut, regardless of whether scoring is enabled.
+
+### Cross-video continuation:
+* Two cuts, in adjacent videos in the playlist, linked as the two halves of one annotation that
+  didn't fit inside a single video file.
+* The front half (in the earlier video) is marked "continues into next video"; its end time is
+  the video's own end, not something the user marks. The back half (in the following video)
+  starts at 0:00 and is completed by the user marking where the annotation actually ends.
+* The link is opt-in on both ends -- checking "continues" on the front half only offers a
+  starting point in the next video (pre-filled label/scores, ready to complete); nothing is
+  auto-created or enforced until the user actually completes it there.
+* A chain can span more than two videos: the middle video's cut can simultaneously complete the
+  link from the video before it and continue the link into the video after it.

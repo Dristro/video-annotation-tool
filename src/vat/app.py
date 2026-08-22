@@ -9,6 +9,7 @@ from vat.errors import ProjectNotFoundError
 from vat.project.project import Project
 from vat.ui.main_window import MainWindow
 from vat.ui.project_dialog import ProjectDialog
+from vat.ui.theme import apply_dark_theme, apply_light_theme, apply_theme  # noqa: F401 (re-exported)
 
 
 def _load_startup_project() -> Project | None:
@@ -23,6 +24,7 @@ def _load_startup_project() -> Project | None:
 
 def main() -> int:
     app = QApplication(sys.argv)
+    apply_theme(app, app_settings.load_theme())
 
     project = _load_startup_project()
     if project is None:

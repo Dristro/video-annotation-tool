@@ -5,6 +5,12 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLa
 
 from vat.playback.mpv_player import MpvPlayer, VideoSurface
 
+# Discrete playback speed steps for the notched speed slider -- a QSlider
+# over these indices rather than a continuous range, so it only ever lands
+# on one of these values (no arbitrary in-between speeds).
+SPEED_STEPS = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
+DEFAULT_SPEED_INDEX = SPEED_STEPS.index(1.0)
+
 
 def format_time(seconds: float) -> str:
     seconds = max(0, int(seconds))
@@ -21,6 +27,12 @@ class VideoPanel(QWidget):
     The MpvPlayer (mpv's core client instance) is created lazily on first
     `load()`. VideoSurface renders it via mpv's Render API rather than
     window embedding -- see VideoSurface's docstring for why.
+
+    Scrubbing lives entirely on TimelineWidget now -- there is no position
+    slider here. The two controls used to duplicate the same job (drag to
+    seek) with two different circular-handle widgets stacked on top of each
+    other; TimelineWidget is the one that also shows cuts, so it's the one
+    that stayed.
 
     Position/duration/pause state is driven entirely by MpvPlayer's async
     property observers, not by polling -- see the long comment in
@@ -43,7 +55,6 @@ class VideoPanel(QWidget):
         self._position: float = 0.0
         self._duration: float = 0.0
         self._is_paused: bool = False
-        self._seeking = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -53,23 +64,36 @@ class VideoPanel(QWidget):
         layout.addWidget(self._surface, stretch=1)
 
         controls = QHBoxLayout()
+
         self._play_btn = QPushButton("Play")
         self._play_btn.clicked.connect(self.toggle_pause)
+        # "Play" and "Pause" are different widths -- without a fixed width
+        # the button visibly resizes (and everything else in the row
+        # shifts) every time playback toggles. Size it once, to fit
+        # whichever label is wider, padded for the button's own chrome.
+        metrics = self._play_btn.fontMetrics()
+        button_width = max(metrics.horizontalAdvance("Play"), metrics.horizontalAdvance("Pause")) + 24
+        self._play_btn.setFixedWidth(button_width)
         controls.addWidget(self._play_btn)
 
-        self._position_slider = QSlider(Qt.Orientation.Horizontal)
-        self._position_slider.setRange(0, 1000)
-        self._position_slider.sliderPressed.connect(self._on_seek_start)
-        # sliderMoved fires continuously while dragging (unlike valueChanged,
-        # it only fires for user drags, not programmatic setValue calls from
-        # _handle_position) -- seeking on every move is what makes scrubbing
-        # live instead of only jumping once the mouse is released.
-        self._position_slider.sliderMoved.connect(self._on_slider_moved)
-        self._position_slider.sliderReleased.connect(self._on_seek_end)
-        controls.addWidget(self._position_slider, stretch=1)
-
         self._time_label = QLabel("0:00 / 0:00")
-        controls.addWidget(self._time_label)
+        controls.addWidget(self._time_label, stretch=1)
+
+        # Playback speed: a notched (discrete-step) slider rather than a
+        # continuous one, so it only ever lands on one of SPEED_STEPS.
+        self._speed_label = QLabel("1.0x")
+        controls.addWidget(self._speed_label)
+        self._speed_slider = QSlider(Qt.Orientation.Horizontal)
+        self._speed_slider.setRange(0, len(SPEED_STEPS) - 1)
+        self._speed_slider.setValue(DEFAULT_SPEED_INDEX)
+        self._speed_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self._speed_slider.setTickInterval(1)
+        self._speed_slider.setSingleStep(1)
+        self._speed_slider.setPageStep(1)
+        self._speed_slider.setFixedWidth(120)
+        self._speed_slider.setToolTip("Playback speed")
+        self._speed_slider.valueChanged.connect(self._on_speed_index_changed)
+        controls.addWidget(self._speed_slider)
 
         layout.addLayout(controls)
 
@@ -86,6 +110,10 @@ class VideoPanel(QWidget):
             self._player.observe_position(self.position_changed.emit)
             self._player.observe_duration(self.duration_changed.emit)
             self._player.observe_pause(self.pause_changed.emit)
+            # The slider may already be off 1x (e.g. left that way from a
+            # previous video) -- apply it to this freshly-created player
+            # instead of silently reverting to mpv's own default speed.
+            self._player.set_speed(SPEED_STEPS[self._speed_slider.value()])
         return self._player
 
     def load(self, path: str) -> None:
@@ -119,25 +147,14 @@ class VideoPanel(QWidget):
             self._player.shutdown()
             self._player = None
 
-    def _on_seek_start(self) -> None:
-        self._seeking = True
-
-    def _on_slider_moved(self, value: int) -> None:
-        if self._duration > 0:
-            self.seek_to((value / 1000.0) * self._duration)
-
-    def _on_seek_end(self) -> None:
-        # The last sliderMoved already seeked to this value; _seeking just
-        # needs clearing so _handle_position resumes driving the slider from
-        # mpv's actual position again.
-        self._seeking = False
+    def _on_speed_index_changed(self, index: int) -> None:
+        speed = SPEED_STEPS[index]
+        self._speed_label.setText(f"{speed:g}x")
+        if self._player:
+            self._player.set_speed(speed)
 
     def _handle_position(self, value: float) -> None:
         self._position = value
-        if not self._seeking and self._duration > 0:
-            self._position_slider.blockSignals(True)
-            self._position_slider.setValue(int((value / self._duration) * 1000))
-            self._position_slider.blockSignals(False)
         self._time_label.setText(f"{format_time(value)} / {format_time(self._duration)}")
 
     def _handle_duration(self, value: float) -> None:

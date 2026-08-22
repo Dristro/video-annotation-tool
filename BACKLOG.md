@@ -17,46 +17,23 @@ promise of order — just so nothing gets silently lost. Move items to
 
 ## UI / UX polish (DaVinci-Resolve-likeness)
 
-- [ ] Thumbnail previews in the playlist panel (currently text + a
-      colored ●/○ annotated marker only).
-- [ ] Waveform/audio preview under the timeline.
-- [ ] Drag-to-resize cut edges directly on the timeline, instead of only
-      Mark In / Mark Out buttons + a separate "Add Cut" action.
-- [ ] Dark theme / visual polish matching DaVinci Resolve's actual palette
-      and spacing — current layout matches the *arrangement* (playlist /
-      preview / timeline / inspector) but not the visual styling.
-- [ ] Confirmation prompt before deleting a cut (currently immediate,
-      no undo).
-- [ ] Undo/redo for cut edits and label changes.
-- [ ] "Recent projects" list (currently only remembers the single
-      last-opened project).
+- [ ] Undo/redo only covers cut add/edit/delete (`UndoStack` in
+      `project/undo_stack.py`, wired in `MainWindow`), not label/score
+      renames -- those propagate across every video's cuts via
+      `rename_*_everywhere` and would need a full before/after snapshot of
+      every affected cut to undo cleanly. `_on_break_continuation()` also
+      isn't on the undo stack yet.
 
-## Scores follow-ups
+## Cross-video continuation follow-ups
 
-- [ ] `NewProjectDialog` (the project-creation wizard) only lets you set
-      initial labels, not initial score definitions or enable scoring --
-      scoring can only be configured *after* creating the project, via
-      **Edit > Edit Scores…**. Fully functional, just an inconsistency
-      with how labels are handled at creation time.
-- [ ] Score values aren't shown anywhere on the timeline visualization
-      (only in the inspector's cuts list text, e.g. "Technique=87.5,
-      Confidence=4"). Could add as a tooltip on hover.
-- [ ] "Edit Scores…" and "Edit Labels…" are separate dialogs/menu items;
-      no single "Project Settings" dialog exists yet as project-level
-      config surfaces grow (videos dir, project dir, labels, scoring are
-      all in different menu entries right now).
-- [ ] Editing an existing annotation only covers label + scores; the
-      start/end time can't be adjusted after the cut is created (only via
-      delete + re-add). Deliberately out of scope for the edit-annotation
-      feature as requested (focused on filling in/correcting scores), but
-      worth revisiting if re-timing existing cuts turns out to matter.
+- [ ] Breaking a continuation link (via the "Break Continuation Link"
+      button, shown when the selected cut has one) is supported now, but
+      *starting* a new one is still only possible at creation time via the
+      checkbox/banner, and there's no way to re-link a cut to a
+      *different* other cut once broken (only delete + re-add).
 
 ## Correctness / robustness
 
-- [ ] Detect and warn on duplicate label shortcut keys (currently the last
-      registered `QShortcut` for a colliding key silently wins).
-- [ ] Warn/handle overlapping cuts within the same video (currently allowed
-      silently; may or may not be desired).
 - [ ] `video_scanner.list_videos` only scans the top level of the videos
       directory (flat playlist, matching "move through all videos in dir
       like a playlist"). No option yet for recursive/subfolder scanning if
@@ -78,9 +55,47 @@ promise of order — just so nothing gets silently lost. Move items to
       rendering region" requirement is satisfied by mpv's own bounded
       demuxer readahead rather than explicit chunked loading logic in our
       code. Revisit if real-world stutter is observed on large files.
+- [ ] Thumbnail generation is now fully off the main thread and bounded
+      (`ThumbnailLoader`: a 3-worker pool draining a queue, each video
+      looked at once per session -- see `CLAUDE.md`). Opening a 289-video
+      project takes ~12 s of *background* work to fill the cache the first
+      time, during which rows gain their thumbnails progressively. That's
+      acceptable but unprioritized: visible rows are extracted in playlist
+      order, not viewport order, so scrolling straight to the bottom of a
+      long list means waiting. Revisit (prioritize the visible range) only
+      if that's actually reported as annoying.
+- [ ] `ThumbnailLoader._seen` never expires, so a thumbnail that fails
+      once is not retried until the app restarts. Deliberate (retrying was
+      what caused the freeze), but it does mean a transient failure --
+      e.g. a video on a drive that was briefly unmounted -- leaves that row
+      iconless for the rest of the session.
+- [ ] Waveform generation is backgrounded per selected video
+      (`playback/waveform_loader.py`) and, now that ffmpeg subprocesses
+      actually run at all, genuinely produces peaks. It has never been
+      profiled on long videos -- a full audio-track decode is much slower
+      than a single frame grab, and unlike thumbnails there is no
+      concurrency bound (one thread per video selection, with late results
+      discarded by path check). Fine at current usage; revisit if rapid
+      playlist stepping is observed to pile up decodes.
 
 ## Verification gaps
 
+- [ ] The `DYLD_LIBRARY_PATH`-leak fix (see `CLAUDE.md`) was verified by
+      running `probe_duration()`, `get_or_create_thumbnail()` and
+      `get_or_create_waveform()` against the real project after importing
+      `vat.playback.mpv_player` -- all three now succeed where all three
+      previously failed. What has *not* been re-checked by the agent is
+      whether anything downstream had quietly adapted to those returning
+      nothing: in particular `TimelineWidget` now receives a real
+      `probe_duration()` value on video selection where it used to get
+      `None` and fall back to mpv's async `duration` observer. **Worth a
+      hands-on look at whether the timeline's total duration and waveform
+      strip now behave correctly on video switch.**
+- [ ] Both fixes for the "Mark Annotated freezes the app" report were
+      measured at the component level against the real 289-video project
+      (`refresh_playlist()`: ~1485 ms -> ~3 ms) rather than by clicking the
+      button in the running app -- the agent's shell has no WindowServer
+      session. **Please confirm the freeze is actually gone in normal use.**
 - [ ] A background-launched instance in the agent's own (non-interactive,
       no WindowServer session) test shell has now consistently
       self-terminated ~15-20s after launch with a clean exit (empty log, no
@@ -114,12 +129,11 @@ promise of order — just so nothing gets silently lost. Move items to
 
 ## Testing gaps
 
-- [ ] `playback/mpv_player.py` and `playback/preloader.py` have no direct
-      automated tests — real libmpv playback isn't meaningfully unit
-      testable, and embedding it in an offscreen/headless window segfaults
-      (see `CLAUDE.md`). Covered only indirectly via manual runs.
-- [ ] No CI workflow configured yet (e.g. GitHub Actions running `pytest`
-      on push).
+- [ ] `playback/mpv_player.py` has no direct automated tests — real libmpv
+      playback isn't meaningfully unit testable, and embedding it in an
+      offscreen/headless window segfaults (see `CLAUDE.md`). Covered only
+      indirectly via manual runs. (`playback/preloader.py` now has direct
+      tests — it never touches libmpv, only `probe_duration()`/file I/O.)
 
 ## Explicitly out of scope (per REQUIREMENT.md)
 

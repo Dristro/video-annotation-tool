@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -18,8 +19,10 @@ from PySide6.QtWidgets import (
 
 from vat.errors import ProjectAlreadyExistsError, ProjectNotFoundError
 from vat.models.label import Label
+from vat.models.score_definition import ScoreDefinition
 from vat.project.project import Project
 from vat.ui.label_editor_dialog import _LabelFormDialog
+from vat.ui.score_editor_dialog import _ScoreFormDialog
 
 
 class NewProjectDialog(QDialog):
@@ -31,6 +34,7 @@ class NewProjectDialog(QDialog):
         self.resize(420, 400)
         self.project: Project | None = None
         self._labels: list[Label] = []
+        self._score_definitions: list[ScoreDefinition] = []
 
         layout = QVBoxLayout(self)
 
@@ -72,6 +76,39 @@ class NewProjectDialog(QDialog):
         label_btn_row.addWidget(remove_label_btn)
         layout.addLayout(label_btn_row)
 
+        # Scoring is entirely optional (project-level, per REQUIREMENT.md
+        # #9) -- consistent with labels being editable-later, everything
+        # set up here can also be changed afterwards via Edit > Edit
+        # Scores…. This just closes the creation-time inconsistency where
+        # only labels (not scores) could be set up at New Project time.
+        self._scoring_checkbox = QCheckBox("Enable scoring for this project")
+        self._scoring_checkbox.toggled.connect(self._on_scoring_toggled)
+        layout.addWidget(self._scoring_checkbox)
+
+        self._scores_table = QTableWidget(0, 5)
+        self._scores_table.setHorizontalHeaderLabels(["Name", "Description", "Min", "Max", "Type"])
+        self._scores_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._scores_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._scores_table.verticalHeader().setVisible(False)
+        self._scores_table.setEnabled(False)
+        header = self._scores_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        layout.addWidget(self._scores_table)
+        score_btn_row = QHBoxLayout()
+        self._add_score_btn = QPushButton("Add Score…")
+        self._add_score_btn.setEnabled(False)
+        self._add_score_btn.clicked.connect(self._add_score)
+        score_btn_row.addWidget(self._add_score_btn)
+        self._remove_score_btn = QPushButton("Remove Selected")
+        self._remove_score_btn.setEnabled(False)
+        self._remove_score_btn.clicked.connect(self._remove_score)
+        score_btn_row.addWidget(self._remove_score_btn)
+        layout.addLayout(score_btn_row)
+
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
@@ -109,6 +146,41 @@ class NewProjectDialog(QDialog):
             self._labels_table.setItem(row, 1, QTableWidgetItem(label.description))
             self._labels_table.setItem(row, 2, QTableWidgetItem(label.shortcut))
 
+    def _on_scoring_toggled(self, checked: bool) -> None:
+        self._scores_table.setEnabled(checked)
+        self._add_score_btn.setEnabled(checked)
+        self._remove_score_btn.setEnabled(checked)
+
+    def _add_score(self) -> None:
+        dialog = _ScoreFormDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            name, description, minimum, maximum, dtype = dialog.values()
+            if not name:
+                return
+            try:
+                self._score_definitions.append(
+                    ScoreDefinition(name=name, minimum=minimum, maximum=maximum, dtype=dtype, description=description)
+                )
+            except ValueError as exc:
+                QMessageBox.warning(self, "Cannot Add Score", str(exc))
+                return
+            self._refresh_scores_table()
+
+    def _remove_score(self) -> None:
+        row = self._scores_table.currentRow()
+        if row >= 0:
+            del self._score_definitions[row]
+            self._refresh_scores_table()
+
+    def _refresh_scores_table(self) -> None:
+        self._scores_table.setRowCount(len(self._score_definitions))
+        for row, defn in enumerate(self._score_definitions):
+            self._scores_table.setItem(row, 0, QTableWidgetItem(defn.name))
+            self._scores_table.setItem(row, 1, QTableWidgetItem(defn.description))
+            self._scores_table.setItem(row, 2, QTableWidgetItem(f"{defn.minimum:g}"))
+            self._scores_table.setItem(row, 3, QTableWidgetItem(f"{defn.maximum:g}"))
+            self._scores_table.setItem(row, 4, QTableWidgetItem(defn.dtype))
+
     def _on_accept(self) -> None:
         project_dir = self._project_dir_edit.text().strip()
         videos_dir = self._videos_dir_edit.text().strip()
@@ -116,7 +188,11 @@ class NewProjectDialog(QDialog):
             QMessageBox.warning(self, "Missing Info", "Both a project directory and a videos directory are required.")
             return
         try:
-            self.project = Project.create(project_dir, videos_dir, self._labels)
+            self.project = Project.create(
+                project_dir, videos_dir, self._labels,
+                scoring_enabled=self._scoring_checkbox.isChecked(),
+                score_definitions=self._score_definitions,
+            )
         except ProjectAlreadyExistsError as exc:
             QMessageBox.warning(self, "Project Already Exists", str(exc))
             return

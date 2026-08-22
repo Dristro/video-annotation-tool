@@ -5,6 +5,449 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed: every ffmpeg/ffprobe subprocess silently aborting (thumbnails, waveforms, durations)
+
+- **Fixed**: the libmpv bootstrap workaround set `DYLD_LIBRARY_PATH`
+  process-wide and never unset it. Every `ffmpeg`/`ffprobe` child process
+  inherited it, and any `DYLD_*` variable makes dyld bind eagerly instead
+  of using its shared-cache fast path — which turned ffmpeg's own unused,
+  normally-never-resolved reference to the missing
+  `_CGLGetCurrentContext` symbol (via `libavfilter`) into a hard abort
+  before `main()`. Every thumbnail, waveform and duration probe therefore
+  failed instantly, and since all three treat failure as "not available"
+  rather than an error, nothing surfaced. On the real 289-video project
+  this meant *zero* thumbnails had ever been cached. Fixed by scoping the
+  variable to the `import mpv` that actually needs it
+  (`_mpv_bootstrap.libmpv_discoverable()`), restoring it immediately
+  after. Verified: all 289 thumbnails now extract, waveforms render, and
+  `probe_duration()` returns real values.
+
+### Fixed: "Mark/Unmark Annotated" freezing the app with the spinning-wait cursor
+
+- **Fixed**: `ThumbnailLoader.load_missing()` started one fresh thread per
+  uncached video on every call, and `refresh_playlist()` calls it on
+  nearly every mutating action — Mark Annotated, add/edit/delete a cut,
+  undo/redo. `Thread.start()` blocks until the new thread is running and
+  each one immediately forks an `ffmpeg` process, so with 289 videos this
+  blocked the **main** thread for ~1.5 s per click at ~800% CPU. Combined
+  with the `DYLD_LIBRARY_PATH` bug above (no extraction ever succeeded, so
+  no cache file was ever written) it re-ran the full storm forever.
+  `ThumbnailLoader` now drains a queue with at most 3 worker threads and
+  never looks at the same video twice per session. Measured on the real
+  project: `refresh_playlist()` went from ~1485 ms to ~3 ms.
+- **Fixed**: `PlaylistPanel` now caches the thumbnail icons it's given and
+  re-applies them across `set_videos()` rebuilds, which clear every row's
+  icon — required now that the loader reports each thumbnail only once.
+  Also avoids re-decoding each JPEG from disk on every refresh.
+
+### Fixed: a label shortcut that starts another one made the longer one unreachable
+
+- **Fixed**: Qt's shortcut map always prefers an exact match over a
+  partial one, so registering both "S" and "S, L" as ordinary
+  `QShortcut`s made pressing S fire the "S" label immediately and left
+  "S, L" permanently unreachable. Reported as "if a shortcut (S) and (S+L)
+  exist, pressing S+L only selects the label with S". This project's own
+  label set hits it three times ("S" vs "S, L"/"S, R", "J" vs "J, R").
+  New `ui/label_shortcuts.py::LabelShortcutManager` registers only the
+  sequences Qt can dispatch unambiguously; a shortcut that starts a longer
+  one instead opens a brief pending window (500 ms) that the next key can
+  complete, hooking `ShortcutOverride` so it sees the key before Qt's
+  shortcut map claims it. Unrelated keys, Esc, or the timeout all commit
+  the shorter shortcut, and typing in a text field still never triggers a
+  label.
+- **Changed**: the label form now records a two-key sequence in its own
+  second field ("Then (optional)") rather than by pressing two keys into
+  one field, and shows a live plain-English description of what will be
+  saved ("Two-key sequence: press S, then L — one after the other, not
+  together"). This keeps the previous fix's property that correcting a
+  shortcut can never silently lengthen it, while making deliberate two-key
+  sequences enterable again. Saving one that starts another shortcut now
+  explains the small delay instead of leaving it to be noticed as
+  sluggishness.
+- 34 new tests (339 total).
+
+### Added: optional justification/description field per cut (REQUIREMENT.md #13)
+
+- **Added**: `Cut.justification` -- a third, always-optional per-cut
+  input alongside the label and scores. Unlike scores, it's a single
+  plain free-text field, not a project-configurable set (no
+  enable/disable, no definitions list), and never required regardless of
+  project config. Shown in the inspector as a plain text field (below the
+  label row, above the scores form), pre-filled when selecting an
+  existing cut or starting a continuation from its front half, and
+  carried through Add/Edit Annotation, timeline drag-resize, and
+  undo/redo the same way label/scores already are. Shown truncated in the
+  cuts list and in full in the timeline hover tooltip.
+- 30 new tests (305 total).
+
+### Fixed: multi-key label shortcuts silently becoming unintended chords
+
+- **Fixed**: `QKeySequenceEdit` (used by the label editor's shortcut
+  field) accumulates up to 4 key presses into a multi-stroke chord by
+  default -- pressing Ctrl+G, then Ctrl+Shift+G to correct it, silently
+  produced "Ctrl+G, Ctrl+Shift+G" instead of replacing the recording,
+  with no visual indication anything but a single combo was recorded.
+  Reported as "multi-key shortcuts not working." New
+  `SingleStrokeKeySequenceEdit` (`ui/widgets.py`) clears before each
+  keystroke so a fresh press always replaces rather than extends.
+- 3 new tests (part of the 305 total above).
+
+### Fixed: Mark Annotated / Add Annotation resetting the playing video to 0:00 and briefly stalling
+
+- **Fixed**: `PlaylistPanel.set_videos()` called `setCurrentRow()` to
+  restore the current selection *after* `blockSignals(False)` — but
+  `clear()` (called earlier in the same method, to rebuild the list) resets
+  the widget's current row to -1 first, so "restoring" the very same row
+  was still a real (-1 → N) transition and fired `currentRowChanged` every
+  single time, even when nothing about the selection actually changed.
+  `MainWindow`'s handler for that signal (`_on_video_selected`) reloads the
+  video unconditionally, so this reset playback to 0:00 and briefly
+  stalled (`probe_duration()`'s `ffprobe` call, plus mpv reopening the
+  file) on *every* `refresh_playlist()` call — which fires on nearly every
+  mutating action (Mark Annotated, Add Annotation, edit/delete a cut, …),
+  not just an actual video switch. Reported as a real bug, and the direct
+  cause of the residual "brief freeze" left after the thumbnail-extraction
+  fix above. `set_videos()` now restores the selection *before* unblocking
+  signals, and only emits `video_selected` itself if the selected video
+  actually changed (first-ever population, or the previously-selected
+  video no longer being in the list).
+- 5 new tests (277 total).
+
+### Added: light/dark theme toggle, saved as a global preference
+
+- **Added**: View > Theme now offers Dark/Light as a real user choice
+  instead of always forcing dark. `vat/ui/theme.py` holds
+  `apply_dark_theme()`/`apply_light_theme()`/`apply_theme()` (moved out of
+  `app.py`, which previously hardcoded dark unconditionally, so
+  `MainWindow` can apply a change live without a circular import). Both
+  themes use Qt's "Fusion" style — the one that actually honors a custom
+  `QPalette` — so switching between them is a full, deterministic palette
+  replacement each time.
+- **Added**: the choice is saved via two new `app_settings` functions,
+  `load_theme()`/`save_theme()`, in the same global, per-machine (not
+  per-project) `~/Library/Application Support/vat/settings.json` that
+  already stores the last-opened/recent project list — a deliberate
+  choice per explicit request, not `project.json`, so the preference
+  follows the user across every project, not just the one open when they
+  changed it.
+- 20 new tests (272 total).
+
+### Fixed: "Mark Annotated" (and other actions) hanging on thumbnail extraction
+
+- **Fixed**: `refresh_playlist()` used to call `get_or_create_thumbnail()`
+  (an `ffmpeg` subprocess) inline, synchronously, for every video in the
+  playlist. That's fine once a thumbnail is cached, but the *first*
+  extraction blocks on the subprocess, and a video ffmpeg can't
+  thumbnail never gets a cache file written — so it retried the same
+  doomed extraction on *every* `refresh_playlist()` call, which fires on
+  nearly every mutating action (add/edit/delete a cut, mark annotated,
+  ...), not just project open. Reported as a real bug: clicking "Mark
+  Annotated" produced a multi-second hang with the spinning-wait cursor.
+  Thumbnail extraction now runs entirely on a background thread
+  (`playback/thumbnail_loader.py`, `ThumbnailLoader`), same pattern as
+  `WaveformLoader` — already-cached thumbnails are still reported
+  immediately (a cheap file-exists check), only genuinely missing ones go
+  through a thread. `PlaylistPanel.set_thumbnail()` updates one row's icon
+  in place as each result arrives, instead of `refresh_playlist()`
+  rebuilding the whole list per thumbnail (which would have re-fired
+  `currentRowChanged` — reloading the selected video — on every arrival).
+- 7 new tests (260 total).
+
+### Added: waveform preview under the timeline
+
+- **Added**: `TimelineWidget` now shows a waveform strip beneath the cuts
+  track. Peak amplitudes are decoded via `ffmpeg` (`media/waveform.py`,
+  downsampled to a fixed 400 buckets regardless of video length) and
+  cached to disk under `<project_dir>/.waveforms/`, same pattern as
+  thumbnails. Unlike thumbnail extraction, this runs on a background
+  thread (`playback/waveform_loader.py`, `WaveformLoader`) rather than the
+  main thread — decoding a whole audio track is slower than grabbing one
+  frame, and blocking the UI on it was judged too risky. Follows the same
+  async-signal pattern used throughout the codebase for mpv's observers: a
+  background thread only ever calls `.emit()`, and `MainWindow`'s
+  connected slot (which checks the emitted path still matches the
+  *current* video, so a late result for a video the user has already
+  navigated away from is ignored) runs on the main thread since Qt
+  auto-queues cross-thread signal delivery.
+- 12 new tests (253 total).
+
+### Added: thumbnail previews in the playlist panel
+
+- **Added**: each playlist entry now shows a small thumbnail (extracted
+  via `ffmpeg` at the 1s mark, `media/thumbnails.py`) next to its
+  ●/○ marker, instead of text only. Cached to disk under
+  `<project_dir>/.thumbnails/` keyed by the video's resolved path, so
+  extraction only happens once per video — later `refresh_playlist()`
+  calls just check the cache file exists. Extraction runs synchronously
+  and best-effort (a failure or missing `ffmpeg` just omits the
+  thumbnail, same spirit as `Preloader`) — see `BACKLOG.md` if generating
+  many uncached thumbnails at once turns out to be slow enough to move to
+  a background thread.
+- 6 new tests (243 total).
+
+### Added: drag-to-resize cut edges on the timeline
+
+- **Added**: pressing within 6px of a cut's start or end edge on
+  `TimelineWidget` now drags that edge instead of scrubbing, resizing the
+  cut live (clamped so it can't cross its own other edge or go outside
+  [0, duration]); releasing emits `cut_resized`, handled by
+  `MainWindow._on_cut_resized()` the same way as a re-time via Edit
+  Annotation — same overlap-confirmation prompt, and pushed onto the same
+  undo/redo stack. Previously the only way to change a cut's timing was
+  Mark In/Out + Edit Annotation, or delete + re-add.
+- 11 new tests (237 total).
+
+### Added: undo/redo for cut add/edit/delete
+
+- **Added**: a small command-pattern `UndoStack` (`project/undo_stack.py`)
+  covers add/edit(incl. re-time)/delete of a cut, wired to Edit > Undo/Redo
+  and the platform-standard shortcuts (`QKeySequence.StandardKey.Undo`/
+  `.Redo` — Cmd+Z/Cmd+Shift+Z on macOS). Undoing an "add" removes it by id;
+  undoing a "delete" or redoing an "add" re-inserts the *same* `Cut`
+  object via a new `Project.restore_cut()`, preserving its id (and
+  therefore any continuation link) rather than minting a fresh one.
+  Undoing/redoing an action recorded against a video that isn't currently
+  open still mutates the right data; it just doesn't force a UI refresh
+  for whatever video happens to be open now. Does **not** cover
+  label/score renames or breaking a continuation link (`BACKLOG.md`).
+- 24 new tests (227 total).
+
+### Added: dark theme
+
+- **Added**: `vat.app.apply_dark_theme()` applies a dark `QPalette` under
+  Qt's "Fusion" style (the one that actually honors a custom palette —
+  macOS's native style mostly ignores it and follows OS appearance
+  instead), applied unconditionally at startup. No light/dark toggle —
+  not asked for. Custom-painted widgets (`TimelineWidget`'s track/cut
+  colors) are unaffected by design, since they draw with their own
+  `QPainter` colors rather than the palette.
+- 2 new tests (211 total). Visual result not confirmed on a real display
+  by the agent — please sanity-check it actually looks right
+  (`BACKLOG.md`'s existing verification-gap note applies here too).
+
+### Added: GitHub Actions CI running pytest
+
+- **Added**: `.github/workflows/tests.yml` runs the full `pytest` suite on
+  push to `main`/`stable` and on pull requests. Runs on a `macos-latest`
+  runner (not Linux) with `brew install mpv ffmpeg`, since `vat.ui.*`
+  modules import `mpv_player.py` transitively (even though no test ever
+  constructs a real `MpvPlayer`), so libmpv has to be loadable just for
+  the suite to collect.
+
+### Added: direct tests for Preloader
+
+- **Added**: `Preloader` never touches libmpv (only `probe_duration()` and
+  a plain file read), so unlike `mpv_player.py` it's actually unit
+  testable — added coverage for the in-flight dedup behavior (a second
+  `preload()` call while one is running is a no-op, not queued), a
+  missing-file path not raising, and a new call being accepted once the
+  previous one finished.
+- 4 new tests (209 total).
+
+### Added: "Open Recent" projects submenu
+
+- **Added**: File > Open Recent lists up to 8 previously-opened project
+  directories (most-recent-first, current project excluded from its own
+  list), stored alongside the existing single "last opened" setting in
+  `~/Library/Application Support/vat/settings.json`. `app_settings
+  .save_last_project_dir()` now read-modify-writes that file instead of
+  blindly overwriting it, which would otherwise have wiped the new
+  `recent_project_dirs` list every time a project was opened.
+- 8 new tests (205 total).
+
+### Added: short id tag distinguishes which cuts a continuation link pairs
+
+- **Added**: cuts with a continuation link now show a short 4-char tag
+  derived from their `continuation_id` (e.g. `#a1b2`) next to the →/←
+  marker — on the timeline (rectangle label + hover tooltip) and in the
+  inspector's cuts list. Two cuts that link to each other always show the
+  same tag, so with several continuing cuts in a project it's now
+  possible to tell which pairs go together without matching label/timing
+  by eye. New `_continuation_tag()` helper in `timeline_widget.py`,
+  reused by `inspector_panel.py`.
+- 8 new tests (197 total).
+
+### Added: handle more than one pending continuation from the previous video
+
+- **Added**: `Project.pending_continuations()` (new, plural) returns every
+  uncompleted `continues_forward` cut left by the previous video, not just
+  the first — the data model never prevented more than one, but the UI
+  only ever surfaced one. `pending_continuation()` (singular) is now a
+  thin wrapper returning the first match, kept for the common case. The
+  inspector's continuation banner shows a "Next" button (with a "(i/N)"
+  count) when there's more than one, and "Start Here" acts on whichever
+  one is currently shown.
+- 9 new tests (193 total).
+
+### Added: break a cut's continuation link
+
+- **Added**: selecting a cut that has a continuation link (either half)
+  now shows a "Break Continuation Link" button in the inspector, which
+  clears its `continuation_id`/`continues_forward` (confirmed via a
+  dialog first). Previously the only way to undo a link was deleting one
+  of the two linked cuts entirely. `AnnotationStore.break_continuation()`
+  is a dedicated method, kept separate from `update_cut()` (which
+  deliberately never touches these fields on an ordinary edit — see the
+  earlier continuation-drop bugfix entry below). Starting a *new* link is
+  still only possible at creation time via the checkbox/banner; re-linking
+  to a *different* cut after breaking isn't supported (BACKLOG.md).
+- 6 new tests (186 total).
+
+### Added: re-time an existing annotation via Edit Annotation
+
+- **Added**: Edit Annotation can now adjust a cut's start/end, not just
+  its label/scores. Previously the only way to change timing was delete +
+  re-add. Mark In/Out are cleared (not pre-filled) on selecting a cut, same
+  as before — clicking Edit Annotation with both still unset keeps the
+  cut's existing timing; explicitly pressing Mark In and/or Mark Out
+  before clicking Edit Annotation re-times it to the new range. Half-set
+  (only one of Mark In/Out touched) disables the button, same rule as Add
+  Annotation. Re-timing into an overlap with another cut on the same video
+  prompts for confirmation, reusing `Project.overlapping_cuts()`.
+- 7 new tests (180 total).
+
+### Added: single "Project Settings…" dialog for labels + scores
+
+- **Added**: `ProjectSettingsDialog` merges label and score management
+  into one tabbed dialog ("Labels" / "Scores"), replacing the separate
+  "Edit Labels…" / "Edit Scores…" menu items and dialogs.
+  `LabelEditorDialog`/`ScoreEditorDialog` still exist as standalone
+  wrappers (their table/CRUD logic was extracted into `_LabelsWidget`/
+  `_ScoresWidget`, embedded by both the standalone dialogs and the new
+  tabbed one) but are no longer wired into `MainWindow`'s menu.
+- 5 new tests (173 total).
+
+### Added: score values on timeline hover tooltip
+
+- **Added**: hovering a cut on `TimelineWidget` now shows a tooltip with
+  its time range, label, and any recorded score values — previously
+  scores were only visible in the inspector's cuts list text.
+- 2 new tests (168 total).
+
+### Added: delete confirmation, duplicate-shortcut warning, overlap warning
+
+- **Added**: deleting a cut now shows a Yes/No confirmation ("This cannot
+  be undone.") instead of deleting immediately — no undo exists yet
+  (`BACKLOG.md`), so this is the only safety net for now.
+- **Added**: `LabelEditorDialog` warns (non-blocking) when a label's
+  shortcut collides with another label's — previously the last-registered
+  `QShortcut` silently won and the other label's shortcut just never
+  fired, with no indication why.
+- **Added**: adding an annotation that overlaps an existing one on the
+  same video now prompts for confirmation first. Overlaps are still
+  allowed (REQUIREMENT.md doesn't forbid them) — this only surfaces the
+  case in case it's accidental. `Project.overlapping_cuts()` is the new
+  reusable check (half-open interval overlap, `start < other.end and
+  other.start < end`).
+- 10 new tests (163 total).
+
+### Fixed: editing an annotation silently severed its cross-video continuation link
+
+- **Fixed**: `AnnotationStore.update_cut()` rebuilt the cut's dataclass
+  without carrying over `continuation_id`/`continues_forward`, so clicking
+  "Edit Annotation" on *any* cut that was part of a cross-video
+  continuation link (REQUIREMENT.md #11) reset those fields to their
+  defaults and silently broke the link, even when only the label or a
+  score was changed. Found during a documentation-verification pass, not
+  reported by a user. Now preserved across `update_cut` unless a future
+  caller explicitly changes them (nothing currently does).
+- 1 new regression test (153 total):
+  `test_update_cut_preserves_continuation_fields`.
+
+### Added/Fixed: playback speed control, play/pause button resize bug
+(REQUIREMENT.md #12, `main` only)
+
+- **Fixed**: the Play/Pause button visibly resized (shifting everything
+  else in the transport row) every time playback toggled, since "Play"
+  and "Pause" aren't the same width. Now sized once via `QFontMetrics` to
+  fit whichever is wider.
+- **Added**: a notched playback speed slider (0.25x-2x, `SPEED_STEPS` in
+  `ui/video_panel.py`), placed inline with the play/pause button and
+  elapsed-time display, at the right-hand end of that row. An integer
+  `QSlider` over step indices rather than a continuous range, so it can
+  only ever land on one of the defined speeds. `MpvPlayer.set_speed()`
+  added as a discrete, user-driven property set (same category as
+  existing seek/pause controls, not a recurring poll). Speed persists
+  across videos within a session, matching typical media player behavior.
+- 11 new tests (152 total): `format_time`, fixed-width button sizing
+  (including across repeated toggles), and the speed slider's default/
+  range/label-update/no-player-safety behavior.
+
+### Added: cross-video continuing annotations (REQUIREMENT.md #11, `main`
+only)
+
+- An annotation can now continue past one video's end into the start of
+  the next video in the playlist. Checking "Continues into next video"
+  while adding a cut marks it as the front half (its end becomes this
+  video's own end automatically -- Mark Out is no longer required, or
+  used, when this is checked) and mints a shared link id. Opening the
+  following video shows a banner ("⚠ Continuing 'goal' from previous
+  video") with a "Start Here" button that pre-fills the label/scores and
+  sets Mark In to 0:00; the user marks where it actually ends and clicks
+  Add Annotation to complete the link.
+- Both ends are opt-in -- nothing is auto-created; the link only exists
+  once the user completes it on the following video.
+- Chains across 3+ videos work without any extra structure: a middle
+  video's cut can simultaneously complete the incoming link and continue
+  it forward, by reusing (not regenerating) the same link id -- the
+  matching logic (`Project.pending_continuation`) only ever checks one
+  hop of playlist adjacency at a time, so one shared id threaded through
+  every cut in the chain still links each adjacent pair correctly.
+- `Cut` gained `continuation_id`/`continues_forward`; the timeline and
+  cuts list show a →/← marker on linked cuts.
+- Design (three options: simple visual flags only, this linked
+  carry-forward approach, or a full multi-segment annotation schema) was
+  confirmed with the user before implementing.
+- 21 new tests (141 total): `Cut` continuation fields, `Project
+  .pending_continuation()` (including the 3-video chain case),
+  `PlaylistPanel.previous_path()`/`next_path()`, `InspectorPanel`'s
+  checkbox/banner/prefill behavior, and a full `MainWindow`-level
+  two-video flow.
+- Verified end-to-end via a scripted (non-pytest) run against real files
+  with `video_panel.load` stubbed, after first reproducing and fixing a
+  bug in the verification script itself (not the source) where
+  `_on_add_cut`'s own `refresh_playlist()` call was wiping out a
+  synthetically-injected playlist mid-test.
+
+### Added/Changed: playlist counts, single scrub control, timeline
+double-click edit, contrast fix, arrow-key bug fix (`main` only --
+not yet promoted to `stable`)
+
+- **Playlist annotation counts**: each video in the left-hand playlist now
+  shows how many cuts it has (e.g. "a.mp4 (3)"), alongside the existing
+  ●/○ annotated marker. `PlaylistPanel.set_videos()` takes an optional
+  `cut_counts` dict; `MainWindow` recomputes and passes it after any
+  add/delete (not edit -- edit doesn't change the count).
+- **Removed the video panel's own position slider** -- it duplicated
+  `TimelineWidget`'s scrubbing (two circular-handle controls doing the
+  same job, reported as confusing). `TimelineWidget` is now the sole
+  scrub control: press-and-drag anywhere on it to scrub live (added
+  `mouseMoveEvent`-driven dragging with a guard so mpv's async position
+  updates can't fight the drag visually).
+- **Double-click a cut on the timeline** to select it (loading it into the
+  inspector for editing, same as a single click) *and* seek playback to
+  its start in one action -- "edit it live."
+- **Fixed low-contrast label text on the timeline**: cut labels now use
+  black or white text based on the background color's luminance instead
+  of hardcoded white, which was unreadable against several of the
+  lighter palette colors.
+- **Fixed a real bug**: once a score field had keyboard focus, Left/Right/
+  Up/Down stopped working for transport/playlist navigation entirely --
+  `QLineEdit` claims plain arrow keys for in-field cursor movement before
+  they ever reach shortcut dispatch. New `TransportLineEdit` (`ui/
+  widgets.py`) intercepts them and forwards to the same handler the
+  global shortcuts use. **Up/Down are also new** -- there was previously
+  no keyboard shortcut for stepping to the previous/next video in the
+  playlist at all; added both as global shortcuts and via score fields'
+  arrow keys.
+- REQUIREMENT.md: extended non-functional requirement #9 (annotation
+  count) and added #10 (keyboard navigation must keep working regardless
+  of focus).
+- 26 new tests (120 total): `TimelineWidget` drag/double-click behavior,
+  `TransportLineEdit` key interception, `contrasting_text_color`,
+  `PlaylistPanel` counts/`select_relative`, and `MainWindow` wiring for
+  all of the above.
+
 ### Changed: `prod` branch renamed to `stable`; per-branch READMEs
 
 - Renamed the `prod` branch to `stable` (same purpose: what end users run

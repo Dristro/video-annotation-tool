@@ -3,11 +3,16 @@ from __future__ import annotations
 import locale
 from typing import Callable
 
-from vat.playback._mpv_bootstrap import ensure_libmpv_loadable
+from vat.playback._mpv_bootstrap import ensure_libmpv_loadable, libmpv_discoverable
 
 ensure_libmpv_loadable()
 
-import mpv  # noqa: E402  (must follow the bootstrap workaround above)
+# The DYLD_LIBRARY_PATH that lets python-mpv's find_library('mpv') succeed
+# is scoped to this import and torn down straight after -- left set, it is
+# inherited by every ffmpeg/ffprobe subprocess and aborts them all before
+# main(). See libmpv_discoverable()'s docstring.
+with libmpv_discoverable():
+    import mpv  # noqa: E402  (must follow the bootstrap workaround above)
 from PySide6.QtCore import Signal  # noqa: E402
 from PySide6.QtGui import QOpenGLContext  # noqa: E402
 from PySide6.QtOpenGLWidgets import QOpenGLWidget  # noqa: E402
@@ -168,6 +173,12 @@ class MpvPlayer:
     def seek(self, seconds: float, relative: bool = False) -> None:
         mode = "relative" if relative else "absolute"
         self._mpv.seek(seconds, mode)
+
+    def set_speed(self, speed: float) -> None:
+        # A discrete, user-driven property set (dragging the speed slider),
+        # same category as set_paused()/seek() above -- not a recurring
+        # poll, so it doesn't carry the deadlock risk documented below.
+        self._mpv.speed = speed
 
     # -- Async observers ---------------------------------------------------
     # Deliberately no synchronous position/duration/pause *getters* here.

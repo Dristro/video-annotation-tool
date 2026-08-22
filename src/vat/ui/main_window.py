@@ -1,18 +1,26 @@
 from __future__ import annotations
 
+import os
+import uuid
+
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QKeySequence, QShortcut
-from PySide6.QtWidgets import QFileDialog, QMainWindow, QMessageBox, QSplitter, QVBoxLayout, QWidget
+from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QShortcut
+from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMessageBox, QSplitter, QVBoxLayout, QWidget
 
 from vat import app_settings
+from vat.constants import THUMBNAILS_DIR_NAME, WAVEFORMS_DIR_NAME
 from vat.errors import CutNotFoundError
 from vat.media.video_scanner import probe_duration
 from vat.playback.preloader import Preloader
+from vat.playback.thumbnail_loader import ThumbnailLoader
+from vat.playback.waveform_loader import WaveformLoader
 from vat.project.project import Project
+from vat.project.undo_stack import Command, UndoStack
 from vat.ui.inspector_panel import InspectorPanel
-from vat.ui.label_editor_dialog import LabelEditorDialog
+from vat.ui.label_shortcuts import LabelShortcutManager
 from vat.ui.playlist_panel import PlaylistPanel
-from vat.ui.score_editor_dialog import ScoreEditorDialog
+from vat.ui.project_settings_dialog import ProjectSettingsDialog
+from vat.ui.theme import apply_theme
 from vat.ui.timeline_widget import TimelineWidget
 from vat.ui.video_panel import VideoPanel
 
@@ -32,6 +40,16 @@ class MainWindow(QMainWindow):
         self.project = project
         self._current_video_path: str | None = None
         self._preloader = Preloader()
+        self._waveform_loader = WaveformLoader()
+        self._waveform_loader.loaded.connect(self._on_waveform_loaded)
+        self._thumbnail_loader = ThumbnailLoader()
+        self._thumbnail_loader.loaded.connect(self._on_thumbnail_loaded)
+        # Covers cut add/edit/delete only, not label/score renames --
+        # those propagate across every video's cuts (rename_*_everywhere)
+        # and would need a full before/after snapshot of every affected
+        # cut to undo cleanly, which is meaningfully more machinery than
+        # this stack currently has (BACKLOG.md).
+        self._undo_stack = UndoStack()
 
         self.setWindowTitle(f"Video Annotation Tool — {project.config.project_dir}")
         self.resize(1280, 800)
@@ -56,7 +74,8 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(2, 1)
         self.setCentralWidget(splitter)
 
-        self._label_shortcuts: list[QShortcut] = []
+        self._label_shortcuts = LabelShortcutManager(self)
+        self._label_shortcuts.label_activated.connect(self.inspector_panel.select_label)
 
         self._build_menu()
         self._wire_signals()
@@ -92,6 +111,9 @@ class MainWindow(QMainWindow):
         open_action = file_menu.addAction("Open Project…")
         open_action.triggered.connect(self._on_open_project)
 
+        self._recent_menu = file_menu.addMenu("Open Recent")
+        self._refresh_recent_menu()
+
         file_menu.addSeparator()
 
         change_videos_action = file_menu.addAction("Change Videos Directory…")
@@ -105,10 +127,29 @@ class MainWindow(QMainWindow):
         quit_action.triggered.connect(self.close)
 
         edit_menu = self.menuBar().addMenu("&Edit")
-        edit_labels_action = edit_menu.addAction("Edit Labels…")
-        edit_labels_action.triggered.connect(self._on_edit_labels)
-        edit_scores_action = edit_menu.addAction("Edit Scores…")
-        edit_scores_action.triggered.connect(self._on_edit_scores)
+        undo_action = edit_menu.addAction("Undo")
+        undo_action.setShortcut(QKeySequence.StandardKey.Undo)
+        undo_action.triggered.connect(self._on_undo)
+        redo_action = edit_menu.addAction("Redo")
+        redo_action.setShortcut(QKeySequence.StandardKey.Redo)
+        redo_action.triggered.connect(self._on_redo)
+        edit_menu.addSeparator()
+        project_settings_action = edit_menu.addAction("Project Settings…")
+        project_settings_action.triggered.connect(self._on_open_project_settings)
+
+        view_menu = self.menuBar().addMenu("&View")
+        theme_menu = view_menu.addMenu("Theme")
+        theme_group = QActionGroup(self)
+        theme_group.setExclusive(True)
+        self._theme_actions: dict[str, QAction] = {}
+        current_theme = app_settings.load_theme()
+        for theme_name, label in (("dark", "Dark"), ("light", "Light")):
+            action = theme_menu.addAction(label)
+            action.setCheckable(True)
+            action.setChecked(theme_name == current_theme)
+            theme_group.addAction(action)
+            action.triggered.connect(lambda checked=False, t=theme_name: self._on_set_theme(t))
+            self._theme_actions[theme_name] = action
 
     # -- Signal wiring ------------------------------------------------------------
     def _wire_signals(self) -> None:
@@ -120,45 +161,84 @@ class MainWindow(QMainWindow):
 
         self.timeline_widget.seek_requested.connect(self.video_panel.seek_to)
         self.timeline_widget.cut_selected.connect(self.inspector_panel.select_cut_by_id)
+        self.timeline_widget.cut_double_clicked.connect(self._on_timeline_cut_double_clicked)
+        self.timeline_widget.cut_resized.connect(self._on_cut_resized)
 
         self.inspector_panel.mark_in_requested.connect(self._on_mark_in)
         self.inspector_panel.mark_out_requested.connect(self._on_mark_out)
         self.inspector_panel.add_cut_requested.connect(self._on_add_cut)
         self.inspector_panel.edit_cut_requested.connect(self._on_edit_cut)
         self.inspector_panel.delete_cut_requested.connect(self._on_delete_cut)
+        self.inspector_panel.break_continuation_requested.connect(self._on_break_continuation)
         self.inspector_panel.seek_to_cut_requested.connect(self._on_seek_to_cut)
         self.inspector_panel.set_annotated_requested.connect(self._on_set_annotated)
-        self.inspector_panel.edit_labels_requested.connect(self._on_edit_labels)
+        self.inspector_panel.edit_labels_requested.connect(lambda: self._on_open_project_settings("labels"))
+        self.inspector_panel.navigate_requested.connect(self._on_navigate_requested)
 
     def _install_shortcuts(self) -> None:
         QShortcut(QKeySequence(Qt.Key.Key_Space), self, activated=self.video_panel.toggle_pause)
         QShortcut(QKeySequence(Qt.Key.Key_I), self, activated=self._on_mark_in)
         QShortcut(QKeySequence(Qt.Key.Key_O), self, activated=self._on_mark_out)
-        QShortcut(QKeySequence(Qt.Key.Key_Left), self, activated=lambda: self.video_panel.seek_relative(-SEEK_STEP_SECONDS))
-        QShortcut(QKeySequence(Qt.Key.Key_Right), self, activated=lambda: self.video_panel.seek_relative(SEEK_STEP_SECONDS))
+        QShortcut(QKeySequence(Qt.Key.Key_Left), self, activated=lambda: self._on_navigate_requested("left"))
+        QShortcut(QKeySequence(Qt.Key.Key_Right), self, activated=lambda: self._on_navigate_requested("right"))
+        QShortcut(QKeySequence(Qt.Key.Key_Up), self, activated=lambda: self._on_navigate_requested("up"))
+        QShortcut(QKeySequence(Qt.Key.Key_Down), self, activated=lambda: self._on_navigate_requested("down"))
+
+    def _on_navigate_requested(self, direction: str) -> None:
+        """Left/Right seek, Up/Down step through the playlist. Shared by
+        the global shortcuts and by score fields' arrow keys (see
+        TransportLineEdit) -- score fields would otherwise swallow plain
+        arrow keys for in-field cursor movement, which was reported as a
+        real bug (transport controls going dead once a score field had
+        focus).
+        """
+        if direction == "left":
+            self.video_panel.seek_relative(-SEEK_STEP_SECONDS)
+        elif direction == "right":
+            self.video_panel.seek_relative(SEEK_STEP_SECONDS)
+        elif direction == "up":
+            self.playlist_panel.select_relative(-1)
+        elif direction == "down":
+            self.playlist_panel.select_relative(1)
 
     def _register_label_shortcuts(self) -> None:
         """(Re)bind each label's custom shortcut key to select it in the inspector.
 
-        Called on startup and after any label edit/rename/project switch, since
-        the set of valid shortcuts can change at any time (REQUIREMENT.md: label
-        shortcuts are editable after project creation).
+        Delegated to LabelShortcutManager rather than one plain QShortcut
+        per label: Qt's shortcut map prefers an exact match over a partial
+        one, which makes a chord like "S, L" unreachable whenever a bare
+        "S" is also bound (see that class's docstring -- this project's own
+        label set hits it three times).
         """
-        for shortcut in self._label_shortcuts:
-            shortcut.setParent(None)
-        self._label_shortcuts.clear()
-        for label in self.project.config.labels:
-            if not label.shortcut:
-                continue
-            shortcut = QShortcut(QKeySequence(label.shortcut), self)
-            shortcut.activated.connect(lambda name=label.name: self.inspector_panel.select_label(name))
-            self._label_shortcuts.append(shortcut)
+        self._label_shortcuts.set_labels(self.project.config.labels)
 
     # -- Playlist / video selection ------------------------------------------------------------
     def refresh_playlist(self) -> None:
         videos = self.project.list_videos()
         annotated_flags = {v.rel_path: self.project.is_annotated(v.rel_path) for v in videos}
-        self.playlist_panel.set_videos(videos, annotated_flags)
+        cut_counts = {}
+        for v in videos:
+            entry = self.project.get_entry(v.rel_path)
+            if entry:
+                cut_counts[v.rel_path] = len(entry.cuts)
+        # No thumbnails passed here -- ThumbnailLoader fills them in
+        # asynchronously via set_thumbnail() below (per row, as each one
+        # arrives) rather than this blocking on ffmpeg for any video that
+        # isn't already cached. refresh_playlist() fires on nearly every
+        # mutating action (add/edit/delete a cut, mark annotated, ...),
+        # not just project open, so it must never itself do slow work --
+        # doing thumbnail extraction inline here used to hang the UI for
+        # several seconds on "Mark Annotated" (reported as a real bug),
+        # worse yet on every retry if a video's thumbnail extraction kept
+        # failing (no cache file ever got written, so it retried every
+        # single call).
+        self.playlist_panel.set_videos(videos, annotated_flags, cut_counts)
+        thumbnails_dir = os.path.join(self.project.config.project_dir, THUMBNAILS_DIR_NAME)
+        self._thumbnail_loader.load_missing(videos, thumbnails_dir)
+
+    def _on_thumbnail_loaded(self, rel_path: str, thumbnail_path: str) -> None:
+        if thumbnail_path:
+            self.playlist_panel.set_thumbnail(rel_path, thumbnail_path)
 
     def _on_video_selected(self, path: str) -> None:
         self._current_video_path = path
@@ -167,14 +247,46 @@ class MainWindow(QMainWindow):
         self.inspector_panel.set_video_name(rel)
         self.inspector_panel.clear_pending()
         self._refresh_cuts_and_status(rel)
+        self._refresh_pending_continuation()
 
         duration = probe_duration(path)
         if duration:
             self.timeline_widget.set_duration(duration)
 
+        # Clear immediately rather than leaving the previous video's
+        # waveform showing while the new one decodes in the background --
+        # set_waveform(None) also correctly re-draws an empty strip if
+        # this video's waveform was never generated at all.
+        self.timeline_widget.set_waveform(None)
+        waveforms_dir = os.path.join(self.project.config.project_dir, WAVEFORMS_DIR_NAME)
+        self._waveform_loader.load(path, waveforms_dir)
+
         next_path = self.playlist_panel.next_path()
         if next_path:
             self._preloader.preload(next_path)
+
+    def _on_waveform_loaded(self, video_path: str, peaks: list) -> None:
+        # Guards against a late result for a video the user has already
+        # navigated away from overwriting the *current* video's waveform.
+        if video_path == self._current_video_path:
+            self.timeline_widget.set_waveform(peaks or None)
+
+    def _refresh_pending_continuation(self) -> None:
+        """Check whether the previous video (by playlist order) left an
+        annotation continuing into the current one still uncompleted, and
+        tell the inspector to show/hide its "Start Here" banner
+        accordingly. Also disables the "continues into next video"
+        checkbox when there's no next video to continue into.
+        """
+        if self._current_video_path is None:
+            self.inspector_panel.set_pending_continuations([])
+            return
+        rel = self.project.rel_path(self._current_video_path)
+        previous_path = self.playlist_panel.previous_path()
+        previous_rel = self.project.rel_path(previous_path) if previous_path else None
+        pending = self.project.pending_continuations(rel, previous_rel)
+        self.inspector_panel.set_pending_continuations(pending)
+        self.inspector_panel.set_continuation_allowed(self.playlist_panel.next_path() is not None)
 
     def _refresh_cuts_and_status(self, rel: str) -> None:
         entry = self.project.get_entry(rel)
@@ -200,13 +312,63 @@ class MainWindow(QMainWindow):
             return
         rel = self.project.rel_path(self._current_video_path)
         start = self.inspector_panel.pending_in()
-        end = self.inspector_panel.pending_out()
+        continues_forward = self.inspector_panel.wants_continues_forward()
+        # A continuing cut's true end isn't something the user marks --
+        # it's however far this video actually runs; Mark Out is ignored
+        # (and not even required, see InspectorPanel._refresh_button_states)
+        # when the checkbox is checked.
+        end = self.video_panel.duration() if continues_forward else self.inspector_panel.pending_out()
         if start is None or end is None or end <= start:
             return
+        if self.project.overlapping_cuts(rel, start, end):
+            # Allowed, not blocked (REQUIREMENT.md doesn't forbid it) --
+            # just a heads-up in case it wasn't intentional.
+            confirm = QMessageBox.question(
+                self,
+                "Overlapping Annotation",
+                "This overlaps an existing annotation on this video. Add it anyway?",
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
         scores = self.inspector_panel.pending_scores()
-        self.project.add_cut(rel, start, end, label, scores)
+        justification = self.inspector_panel.pending_justification()
+        # completing_continuation_id() is set when this Add Annotation is
+        # finishing the back half of a continuation started in the
+        # previous video (via the "Start Here" banner). If continues_forward
+        # is *also* checked, this same cut continues further into the video
+        # after this one -- reuse the same id rather than minting a new one:
+        # pending_continuation() only ever checks one hop of adjacency at a
+        # time, so propagating a single shared id through every cut in a
+        # 3+-video chain still links each adjacent pair correctly, and a
+        # fresh id here would silently sever the chain at this cut instead.
+        # A fresh id is only needed when this cut isn't completing anything
+        # (the start of a new chain).
+        continuation_id = self.inspector_panel.completing_continuation_id()
+        if continues_forward and continuation_id is None:
+            continuation_id = uuid.uuid4().hex
+        new_cut = self.project.add_cut(
+            rel, start, end, label, scores, justification,
+            continuation_id=continuation_id, continues_forward=continues_forward,
+        )
+        self._undo_stack.push(Command(
+            undo=lambda: self._remove_cut_and_sync(rel, new_cut.id),
+            redo=lambda: self._restore_cut_and_sync(rel, new_cut),
+        ))
         self.inspector_panel.clear_pending()
         self._refresh_cuts_and_status(rel)
+        self.refresh_playlist()  # annotation count for this video just changed
+        self._refresh_pending_continuation()  # this add may have just completed one
+
+    def _remove_cut_and_sync(self, rel: str, cut_id: str) -> None:
+        try:
+            self.project.remove_cut(rel, cut_id)
+        except CutNotFoundError:
+            pass
+        self._sync_after_undo_redo(rel)
+
+    def _restore_cut_and_sync(self, rel: str, cut) -> None:
+        self.project.restore_cut(rel, cut)
+        self._sync_after_undo_redo(rel)
 
     def _on_edit_cut(self, label: str) -> None:
         if self._current_video_path is None:
@@ -215,22 +377,143 @@ class MainWindow(QMainWindow):
         if cut_id is None:
             return
         rel = self.project.rel_path(self._current_video_path)
+        entry = self.project.get_entry(rel)
+        old_cut = next((c for c in entry.cuts if c.id == cut_id), None) if entry else None
+        if old_cut is None:
+            return
         scores = self.inspector_panel.pending_scores()
-        self.project.update_cut(rel, cut_id, label=label, scores=scores)
-        self._refresh_cuts_and_status(rel)
-        # Re-select the same cut so the panel visibly reflects the saved
-        # values rather than losing selection when the list rebuilds.
-        self.inspector_panel.select_cut_by_id(cut_id)
+        justification = self.inspector_panel.pending_justification()
+        retime = self.inspector_panel.pending_retime()
+        new_start, new_end = retime if retime is not None else (old_cut.start, old_cut.end)
+        if retime is not None:
+            if self.project.overlapping_cuts(rel, new_start, new_end, exclude_cut_id=cut_id):
+                confirm = QMessageBox.question(
+                    self,
+                    "Overlapping Annotation",
+                    "This new range overlaps an existing annotation on this video. Save it anyway?",
+                )
+                if confirm != QMessageBox.StandardButton.Yes:
+                    return
+        self._apply_cut_snapshot(rel, cut_id, new_start, new_end, label, scores, justification)
+        self._undo_stack.push(Command(
+            undo=lambda: self._apply_cut_snapshot(
+                rel, cut_id, old_cut.start, old_cut.end, old_cut.label, old_cut.scores, old_cut.justification
+            ),
+            redo=lambda: self._apply_cut_snapshot(rel, cut_id, new_start, new_end, label, scores, justification),
+        ))
+
+    def _apply_cut_snapshot(
+        self, rel: str, cut_id: str, start: float, end: float, label: str, scores: dict, justification: str = "",
+    ) -> None:
+        """Overwrite a cut's start/end/label/scores/justification in one
+        shot -- shared by _on_edit_cut, _on_cut_resized, and their
+        undo/redo commands, since all of these are "make this cut look
+        like this snapshot" with no partial-field semantics.
+        """
+        self.project.update_cut(
+            rel, cut_id, start=start, end=end, label=label, scores=dict(scores), justification=justification,
+        )
+        if self._current_video_path and self.project.rel_path(self._current_video_path) == rel:
+            self._refresh_cuts_and_status(rel)
+            # Re-select the same cut so the panel visibly reflects the
+            # saved values rather than losing selection when the list
+            # rebuilds.
+            self.inspector_panel.select_cut_by_id(cut_id)
+
+    def _on_cut_resized(self, cut_id: str, start: float, end: float) -> None:
+        """TimelineWidget's edge-drag already enforces a minimum length
+        live, so `start < end` should always hold here -- checked anyway
+        since this is data arriving from a signal, not a direct call.
+        """
+        if self._current_video_path is None or end <= start:
+            return
+        rel = self.project.rel_path(self._current_video_path)
+        entry = self.project.get_entry(rel)
+        old_cut = next((c for c in entry.cuts if c.id == cut_id), None) if entry else None
+        if old_cut is None:
+            return
+        if (start, end) == (old_cut.start, old_cut.end):
+            return  # e.g. a click that grabbed an edge but didn't actually move it
+        if self.project.overlapping_cuts(rel, start, end, exclude_cut_id=cut_id):
+            confirm = QMessageBox.question(
+                self,
+                "Overlapping Annotation",
+                "This new range overlaps an existing annotation on this video. Save it anyway?",
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                self._refresh_cuts_and_status(rel)  # repaint the timeline back to the committed range
+                return
+        self._apply_cut_snapshot(rel, cut_id, start, end, old_cut.label, old_cut.scores, old_cut.justification)
+        self._undo_stack.push(Command(
+            undo=lambda: self._apply_cut_snapshot(
+                rel, cut_id, old_cut.start, old_cut.end, old_cut.label, old_cut.scores, old_cut.justification
+            ),
+            redo=lambda: self._apply_cut_snapshot(
+                rel, cut_id, start, end, old_cut.label, old_cut.scores, old_cut.justification
+            ),
+        ))
 
     def _on_delete_cut(self, cut_id: str) -> None:
         if self._current_video_path is None:
             return
         rel = self.project.rel_path(self._current_video_path)
+        entry = self.project.get_entry(rel)
+        old_cut = next((c for c in entry.cuts if c.id == cut_id), None) if entry else None
         try:
             self.project.remove_cut(rel, cut_id)
         except CutNotFoundError:
             return
+        if old_cut is not None:
+            self._undo_stack.push(Command(
+                undo=lambda: self._restore_cut_and_sync(rel, old_cut),
+                redo=lambda: self._remove_cut_and_sync(rel, cut_id),
+            ))
         self._refresh_cuts_and_status(rel)
+        self.refresh_playlist()  # annotation count for this video just changed
+
+    def _sync_after_undo_redo(self, rel: str) -> None:
+        if self._current_video_path and self.project.rel_path(self._current_video_path) == rel:
+            self._refresh_cuts_and_status(rel)
+            self._refresh_pending_continuation()
+        self.refresh_playlist()  # annotation count may have changed regardless of current video
+
+    def _on_undo(self) -> None:
+        self._undo_stack.undo()
+
+    def _on_redo(self) -> None:
+        self._undo_stack.redo()
+
+    def _on_set_theme(self, theme: str) -> None:
+        # A global preference, not a per-project one -- saved to
+        # app_settings' shared settings.json (~/Library/Application
+        # Support/vat/) rather than this project's project.json, so it
+        # carries over across every project the user opens, not just this
+        # one. QApplication.instance() rather than a stored reference:
+        # MainWindow never held one, and there's exactly one per process.
+        app = QApplication.instance()
+        if app is not None:
+            apply_theme(app, theme)
+        app_settings.save_theme(theme)
+
+    def _on_break_continuation(self, cut_id: str) -> None:
+        if self._current_video_path is None:
+            return
+        rel = self.project.rel_path(self._current_video_path)
+        confirm = QMessageBox.question(
+            self,
+            "Break Continuation Link",
+            "Break this annotation's link to the cut it continues from/into? "
+            "The other cut is left as-is (its own link becomes dangling, "
+            "harmless, and can be broken separately).",
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        self.project.break_continuation(rel, cut_id)
+        self._refresh_cuts_and_status(rel)
+        self.inspector_panel.select_cut_by_id(cut_id)
+        # Breaking a front half's link removes the pending-continuation
+        # banner the *next* video would otherwise show for it.
+        self._refresh_pending_continuation()
 
     def _on_seek_to_cut(self, cut_id: str) -> None:
         if self._current_video_path is None:
@@ -243,6 +526,14 @@ class MainWindow(QMainWindow):
             if cut.id == cut_id:
                 self.video_panel.seek_to(cut.start)
                 return
+
+    def _on_timeline_cut_double_clicked(self, cut_id: str) -> None:
+        """Double-clicking a cut on the timeline both selects it (loading
+        its label/scores into the inspector for editing) and seeks
+        playback to its start, so the user can watch it while editing.
+        """
+        self.inspector_panel.select_cut_by_id(cut_id)
+        self._on_seek_to_cut(cut_id)
 
     def _on_set_annotated(self, annotated: bool) -> None:
         if self._current_video_path is None:
@@ -272,20 +563,17 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"Video Annotation Tool — {self.project.config.project_dir}")
         app_settings.save_last_project_dir(self.project.config.project_dir)
 
-    def _on_edit_labels(self) -> None:
-        dialog = LabelEditorDialog(self.project, self)
+    def _on_open_project_settings(self, initial_tab: str = "labels") -> None:
+        dialog = ProjectSettingsDialog(self.project, self, initial_tab=initial_tab)
         dialog.exec()
+        # Labels and scores are both on this one dialog now, so refresh
+        # both regardless of which tab was opened -- either could have
+        # been edited during the same session.
         self.inspector_panel.set_labels(self.project.config.labels)
-        self._register_label_shortcuts()
-        if self._current_video_path:
-            self._refresh_cuts_and_status(self.project.rel_path(self._current_video_path))
-
-    def _on_edit_scores(self) -> None:
-        dialog = ScoreEditorDialog(self.project, self)
-        dialog.exec()
         self.inspector_panel.set_score_definitions(
             self.project.config.scoring_enabled, self.project.config.score_definitions
         )
+        self._register_label_shortcuts()
         if self._current_video_path:
             self._refresh_cuts_and_status(self.project.rel_path(self._current_video_path))
 
@@ -307,6 +595,25 @@ class MainWindow(QMainWindow):
             return
         self._switch_project(project)
 
+    def _refresh_recent_menu(self) -> None:
+        self._recent_menu.clear()
+        recents = [p for p in app_settings.load_recent_project_dirs() if p != self.project.config.project_dir]
+        if not recents:
+            empty_action = self._recent_menu.addAction("(No other recent projects)")
+            empty_action.setEnabled(False)
+            return
+        for path in recents:
+            action = self._recent_menu.addAction(path)
+            action.triggered.connect(lambda checked=False, p=path: self._on_open_recent(p))
+
+    def _on_open_recent(self, path: str) -> None:
+        try:
+            project = Project.open(path)
+        except Exception as exc:  # noqa: BLE001 -- surfaced directly to the user
+            QMessageBox.warning(self, "Cannot Open Project", str(exc))
+            return
+        self._switch_project(project)
+
     def _switch_project(self, project: Project) -> None:
         self.project = project
         app_settings.save_last_project_dir(project.config.project_dir)
@@ -314,6 +621,7 @@ class MainWindow(QMainWindow):
         self.inspector_panel.set_labels(project.config.labels)
         self.inspector_panel.set_score_definitions(project.config.scoring_enabled, project.config.score_definitions)
         self._register_label_shortcuts()
+        self._refresh_recent_menu()
         self._current_video_path = None
         self.refresh_playlist()
 

@@ -23,8 +23,11 @@ class Project:
 
     # -- Lifecycle ------------------------------------------------------------
     @classmethod
-    def create(cls, project_dir: str, videos_dir: str, labels: list[Label] | None = None) -> "Project":
-        project_store = ProjectStore.create(project_dir, videos_dir, labels)
+    def create(
+        cls, project_dir: str, videos_dir: str, labels: list[Label] | None = None,
+        scoring_enabled: bool = False, score_definitions: list[ScoreDefinition] | None = None,
+    ) -> "Project":
+        project_store = ProjectStore.create(project_dir, videos_dir, labels, scoring_enabled, score_definitions)
         annotation_store = AnnotationStore.create(project_store.config.project_dir)
         return cls(project_store, annotation_store)
 
@@ -64,17 +67,34 @@ class Project:
     # -- Cuts ------------------------------------------------------------
     def add_cut(
         self, rel_path: str, start: float, end: float, label: str = "",
-        scores: dict[str, float] | None = None,
+        scores: dict[str, float] | None = None, justification: str = "",
+        continuation_id: str | None = None, continues_forward: bool = False,
     ) -> Cut:
         return self.annotation_store.add_cut(
-            rel_path, Cut(start=start, end=end, label=label, scores=dict(scores or {}))
+            rel_path,
+            Cut(
+                start=start, end=end, label=label, scores=dict(scores or {}), justification=justification,
+                continuation_id=continuation_id, continues_forward=continues_forward,
+            ),
         )
+
+    def restore_cut(self, rel_path: str, cut: Cut) -> Cut:
+        """Re-insert an exact Cut object (same id and every field) rather
+        than constructing a fresh one -- used by MainWindow's undo/redo
+        stack to redo an "add" or undo a "delete" without minting a new id
+        (a new id would leave any continuation link pointing at an id that
+        no longer exists).
+        """
+        return self.annotation_store.add_cut(rel_path, cut)
 
     def update_cut(self, rel_path: str, cut_id: str, **kwargs) -> Cut:
         return self.annotation_store.update_cut(rel_path, cut_id, **kwargs)
 
     def remove_cut(self, rel_path: str, cut_id: str) -> None:
         self.annotation_store.remove_cut(rel_path, cut_id)
+
+    def break_continuation(self, rel_path: str, cut_id: str) -> Cut:
+        return self.annotation_store.break_continuation(rel_path, cut_id)
 
     def is_cut_complete(self, cut: Cut) -> bool:
         """True unless scoring is enabled and the cut is missing a value for
@@ -91,6 +111,56 @@ class Project:
         if not self.config.scoring_enabled:
             return []
         return [defn.name for defn in self.config.score_definitions if defn.name not in cut.scores]
+
+    def overlapping_cuts(self, rel_path: str, start: float, end: float, exclude_cut_id: str | None = None) -> list[Cut]:
+        """Existing cuts in `rel_path` whose [start, end) range overlaps the
+        given one. Overlaps are allowed (not rejected) per REQUIREMENT.md --
+        this is purely so the UI can warn before creating/re-timing one,
+        not a validation gate. `exclude_cut_id` excludes the cut being
+        edited/re-timed from being reported as overlapping itself.
+        """
+        entry = self.get_entry(rel_path)
+        if entry is None:
+            return []
+        return [
+            cut
+            for cut in entry.cuts
+            if cut.id != exclude_cut_id and cut.start < end and start < cut.end
+        ]
+
+    def pending_continuation(self, rel_path: str, previous_rel_path: str | None) -> Cut | None:
+        """The first uncompleted continuation left by the previous video,
+        or None. Convenience wrapper around pending_continuations() for
+        the common case (at most one) -- see its docstring for the actual
+        matching logic. Kept as its own method since it's the one most
+        callers/tests want; still one hop, no chain walking.
+        """
+        matches = self.pending_continuations(rel_path, previous_rel_path)
+        return matches[0] if matches else None
+
+    def pending_continuations(self, rel_path: str, previous_rel_path: str | None) -> list[Cut]:
+        """Every cut in the previous video (by playlist order) marked
+        `continues_forward` that this video hasn't yet completed with a
+        matching `continuation_id`, so the UI can offer to complete any of
+        them. Normally at most one, but the data model doesn't prevent a
+        video from leaving more than one uncompleted continuation
+        (BACKLOG.md) -- this only ever looks one hop backward, same as
+        pending_continuation(); it does not walk a chain.
+        """
+        if not previous_rel_path:
+            return []
+        previous_entry = self.get_entry(previous_rel_path)
+        if previous_entry is None:
+            return []
+        current_entry = self.get_entry(rel_path)
+        completed_ids = {
+            c.continuation_id for c in (current_entry.cuts if current_entry else []) if c.continuation_id
+        }
+        return [
+            cut
+            for cut in previous_entry.cuts
+            if cut.continues_forward and cut.continuation_id and cut.continuation_id not in completed_ids
+        ]
 
     # -- Labels ------------------------------------------------------------
     def add_label(self, name: str, shortcut: str = "", description: str = "") -> Label:

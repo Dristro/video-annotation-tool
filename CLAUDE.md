@@ -69,6 +69,35 @@ video was loaded. Fixed by re-asserting
 `MpvPlayer.__init__` (`src/vat/playback/mpv_player.py`), right before
 `mpv.MPV(...)` is constructed, rather than relying on import-time ordering.
 
+A third one, and the nastiest to diagnose because it fails *silently and
+somewhere else entirely*: **the `DYLD_LIBRARY_PATH` this workaround needs
+must never outlive the `import mpv` that needs it.** python-mpv's module
+body does `CDLL(ctypes.util.find_library('mpv'))`, and `find_library`
+returns `None` for Homebrew libs unless that variable points at them — so
+the import genuinely needs it set. But it used to be set process-wide and
+never restored, and **every `ffmpeg`/`ffprobe` subprocess the app spawns
+inherits it**. Any `DYLD_*` variable makes dyld drop its shared-cache /
+prebuilt-loader fast path and bind far more eagerly, which turns ffmpeg's
+*own* unused, normally-never-resolved reference to the very same missing
+`_CGLGetCurrentContext` symbol (from `libavfilter`, which links legacy
+OpenGL) into a hard `dyld` abort before `main()` runs. Same OS/library
+interaction as above, one level down. Verify it yourself in one line:
+`ffmpeg -version` works, `DYLD_LIBRARY_PATH=/opt/homebrew/lib ffmpeg
+-version` aborts.
+
+Consequence when this regressed: **thumbnails, waveforms and
+`probe_duration()` were all completely dead** and nothing said so — all
+three are deliberately best-effort and treat failure as "not available"
+rather than an error. The real 289-video project had `.thumbnails/`
+sitting empty after days of use, which in turn kept `refresh_playlist()`
+re-queueing 289 doomed extractions on every mutating action (the freeze
+described in CHANGELOG). Fixed by
+`_mpv_bootstrap.libmpv_discoverable()`, a context manager that sets the
+variable, and `mpv_player.py` doing `with libmpv_discoverable(): import
+mpv`. **If you add anything that shells out (ffmpeg, ffprobe, mpv CLI,
+anything), and it works from your terminal but not from the app, check
+`os.environ` for `DYLD_*` first.**
+
 A fourth one, more serious than the others: **never call a synchronous mpv
 property getter (`mpv_get_property`, e.g. python-mpv's `.time_pos` /
 `.duration` / `.pause` properties) from the Qt main thread on a recurring
@@ -295,6 +324,28 @@ before implementing (don't re-litigate without checking back):
     save visibly "stick" instead of the panel going blank right after
     editing.
 
+### Justification/description: a third input type, but not a set like scores
+
+Per REQUIREMENT.md #13. `Cut.justification: str = ""` -- a single plain
+free-text field, always optional, present on every cut regardless of
+project config. Deliberately **not** modeled like scores (no
+`enable/disable`, no per-project list of named definitions): the request
+was for one additional field alongside label/scores, not a
+project-configurable set of text fields. `InspectorPanel._justification_input`
+is a plain `QLineEdit`, not a `TransportLineEdit` -- unlike the short
+numeric score fields, free text genuinely needs normal in-field arrow-key
+cursor movement, so losing it isn't an acceptable tradeoff here.
+`AnnotationStore.update_cut(justification=...)` follows the same
+None-means-"leave unchanged" convention as `label` (not the dict-replace
+convention `scores` uses) -- an explicit `""` does clear it, since being
+optional means "allowed to be empty," not "can't be explicitly emptied."
+Threaded through every cut-mutating path that already threads
+label/scores (`_on_add_cut`, `_on_edit_cut`/`_apply_cut_snapshot`,
+`_on_cut_resized`, undo/redo, `break_continuation`) the same way
+`continuation_id`/`continues_forward` already had to be after the
+update_cut continuation-drop bug -- any new per-cut field added in the
+future needs the same audit across all of these, not just `add_cut`.
+
 ### The "annotated" flag is not just "has cuts"
 
 Per `REQUIREMENT.md`'s Definitions section: a video is annotated only once
@@ -304,13 +355,249 @@ explicitly pressed "mark annotated". Adding cuts alone does not flip
 `annotated` to `True` — that requires the explicit confirm action. Both
 `AnnotationStore` and the test suite encode this distinction; preserve it.
 
+### VideoPanel's transport row: fixed-width play button, notched speed slider
+
+- The Play/Pause `QPushButton` is sized once at construction, via
+  `QFontMetrics.horizontalAdvance()` on both "Play" and "Pause" (+
+  padding), then `setFixedWidth()`'d to that. Without this, the button
+  (and everything after it in the row) visibly resized/shifted on every
+  toggle, since the two labels aren't the same width -- reported as a
+  bug. If you ever change the button's label text, remeasure both
+  strings again rather than hardcoding a width.
+- Playback speed is a **notched** `QSlider` -- integer range over indices
+  into `SPEED_STEPS` (`ui/video_panel.py`), not a continuous range mapped
+  to float speeds. This is deliberate: an integer-range `QSlider` can only
+  land on whole index values, so "notched" (snaps to a fixed step) falls
+  out for free rather than needing custom snapping logic. `MpvPlayer
+  .set_speed()` is a discrete, user-driven property set (dragging the
+  slider) -- same category as `set_paused()`/`seek()`, not a recurring
+  poll, so it's not subject to the deadlock risk documented above for
+  synchronous getters called from a timer.
+- Speed persists across videos on purpose (one `MpvPlayer` core instance
+  lives for the whole session, and mpv's `speed` property isn't
+  per-file) -- if the user sets 0.5x, it stays 0.5x for the next video
+  too, matching how most media players behave. `_ensure_player()`
+  explicitly re-applies the slider's current value to a freshly
+  constructed player instead of letting it silently revert to mpv's own
+  default, in case a fresh core is ever created mid-session.
+
+### TimelineWidget is the *only* scrub control
+
+`VideoPanel` used to also have its own `QSlider` for scrubbing, stacked
+right above `TimelineWidget` -- two different circular-handle widgets
+doing the same job (reported as confusing; removed). `TimelineWidget` now
+owns dragging entirely:
+
+- `mousePressEvent`/`mouseMoveEvent`/`mouseReleaseEvent` implement
+  press-and-drag scrubbing directly (no `setMouseTracking` needed -- Qt
+  delivers move events while a button is held without it).
+- `self._dragging` guards `set_position()`: while `True`, external calls
+  (i.e. mpv's async position observer, arriving via
+  `VideoPanel.position_changed` -> `TimelineWidget.set_position`) are
+  ignored, so the playhead doesn't jitter/fight the mouse from a seek's
+  round-trip lag. The drag's own `_seek_to_x()` updates `self._position`
+  directly (bypassing that guard, since it's the source of truth during a
+  drag) and repaints immediately, so the visual stays smooth regardless of
+  when mpv's actual position catches up.
+- `mouseDoubleClickEvent` on a cut emits `cut_double_clicked`, wired in
+  `MainWindow._on_timeline_cut_double_clicked` to *both* select the cut
+  (loads it into the inspector for editing, same as a single click) *and*
+  seek playback to its start -- "edit it live," per the request that added
+  this. Note Qt's actual event sequence for a double click is press ->
+  release -> **doubleclick** -> release, not two presses, so the first
+  click's own selection/seek already happened via `mousePressEvent` before
+  `cut_double_clicked` fires -- the double-click handler's actions are
+  intentionally redundant with that, not a replacement for it.
+- Cut label text color is computed via `utils.colors.contrasting_text_color()`
+  (YIQ luminance) rather than hardcoded white -- several palette colors
+  (e.g. `#bcf60c`, `#fabebe`) are light enough that white text was
+  reported as hard to read.
+
+### TransportLineEdit: keeping transport shortcuts alive from a text field
+
+A `QLineEdit`-focused score input silently swallows plain Left/Right/Up/
+Down for in-field cursor movement before those key presses ever reach
+`QShortcut` dispatch -- no `ShortcutContext` setting fixes this, since
+it's the focused widget's own `keyPressEvent` claiming the key, not a
+shortcut-routing question. Reported as a real bug (arrow keys going dead
+once a score field had focus). Fixed in `ui/widgets.py`:
+`TransportLineEdit` intercepts plain (unmodified) arrow keys in its own
+`keyPressEvent` *before* calling `super()`, emitting `arrow_key_pressed`
+instead of moving the cursor; modified combinations (e.g. Shift+Left for
+selection) still fall through to normal `QLineEdit` behavior. All of
+`InspectorPanel`'s dynamically-built score fields use this instead of
+plain `QLineEdit`, forwarding to `MainWindow._on_navigate_requested()` --
+the same handler the global Left/Right/Up/Down `QShortcut`s use, so the
+behavior is identical whether or not a score field happens to have focus.
+If you add another always-must-work-regardless-of-focus keybinding, route
+it through `_on_navigate_requested()`'s direction-string pattern rather
+than inventing a new one-off mechanism.
+
+### Label shortcuts: two-key sequences, and why they can't be plain QShortcuts
+
+Two-key label shortcuts ("S, L" -- press S, then L) are a real, supported
+feature, and the project this tool was built for uses them heavily. Two
+separate real bugs live here; don't "simplify" either fix without
+re-reading both.
+
+**Recording them** (`ui/widgets.py`, `ui/label_editor_dialog.py`).
+`QKeySequenceEdit` records up to 4 presses into a multi-stroke sequence by
+default and does not reset on a fresh press -- pressing Ctrl+G, then
+Ctrl+Shift+G to *correct* it, appends rather than replaces, silently
+producing "Ctrl+G, Ctrl+Shift+G" with zero visual indication. Reported as
+a real bug. `SingleStrokeKeySequenceEdit` clears at the top of its own
+`keyPressEvent`, so one field can only ever hold one combo;
+`_LabelFormDialog` then uses **two** of them side by side ("Shortcut" and
+"Then (optional)"), so a second stroke is always deliberate and correcting
+either stroke can never lengthen the sequence. A live hint label
+(`describe_shortcut()`) spells out in words what will be saved. An earlier
+fix made chords impossible to enter at all -- that overcorrected, since
+chords were what the user wanted; keep both properties.
+
+**Dispatching them** (`ui/label_shortcuts.py`). **Qt's shortcut map always
+prefers an exact match over a partial one.** Registering both "S" and
+"S, L" as ordinary `QShortcut`s therefore makes "S, L" permanently
+unreachable: pressing S fires "S" immediately and the sequence never gets
+a chance to complete. Verified directly against Qt 6.11; the real label
+set hits it three times ("S" vs "S, L"/"S, R", "J" vs "J, R").
+`LabelShortcutManager` handles this:
+
+- A binding no other binding starts with gets an ordinary `QShortcut` and
+  fires instantly -- including multi-stroke ones like "R, E" whose first
+  stroke isn't itself a binding (Qt dispatches those natively, fine).
+- A binding that *is* the start of a longer one only opens a pending
+  window when it fires; the longer bindings are **not** registered with Qt
+  at all, and are reached solely by completing that window. Unrelated
+  keys, Esc, or `CHORD_TIMEOUT_MS` (500 ms) all commit the shorter one.
+- The pending window filters **`ShortcutOverride`, not `KeyPress`.** This
+  is the part that is easy to get wrong and cost a debugging round: Qt
+  consults its shortcut map *before* delivering a `KeyPress`, so a
+  KeyPress filter never sees a key the map already claimed. With the real
+  label set that broke "S, R" (R was swallowed as a partial match for the
+  unrelated "R, E") and dropped the pending "S" whenever the next key was
+  bound to anything. Accepting a `ShortcutOverride` makes Qt skip shortcut
+  handling for that key, which is the hook needed.
+- Letting the short binding's own `QShortcut` open the window -- rather
+  than filtering all key presses app-wide -- is what preserves "typing in
+  a text field never selects a label": `QLineEdit` claims plain printable
+  keys via `ShortcutOverride`, so "S" never fires while one has focus, so
+  no window opens and nothing is intercepted. Covered by
+  `tests/test_label_shortcuts.py`, which drives the real label set.
+
+### Thumbnail loading must be queued, bounded, and once-per-video
+
+`ThumbnailLoader` looks like it could just spawn a thread per video. It
+can't, and this has now caused the *same reported symptom* ("Mark
+Annotated" freezing with the spinning cursor) twice, for two different
+reasons:
+
+1. First version called `get_or_create_thumbnail()` inline on the main
+   thread. Obvious once found.
+2. Second version moved it to one fresh `threading.Thread` per uncached
+   video -- but `refresh_playlist()` runs on nearly every mutating action,
+   `Thread.start()` blocks until the new thread is actually running, and
+   each thread immediately forks an `ffmpeg`. Measured against the real
+   289-video project: **~1.5 s of main-thread blocking per click**, at
+   ~800% CPU. Worse, extraction was failing for unrelated reasons (see the
+   `DYLD_LIBRARY_PATH` landmine above), so no cache file was ever written
+   and the full storm repeated forever.
+
+So: a bounded pool (`MAX_WORKERS = 3`) drains a queue, and a `_seen` set
+keyed on `(video path, cache dir)` guarantees each video is looked at
+**once per session** -- successes, failures, and already-cached alike.
+Consequence to remember: the loader will not re-report a thumbnail after
+`PlaylistPanel.set_videos()` rebuilds the list and drops every row's icon,
+so `PlaylistPanel` caches the `QIcon`s it is given and re-applies them
+itself. If you change either side, check both.
+
+### Playlist annotation counts need an explicit refresh trigger
+
+`PlaylistPanel.set_videos()` takes an optional `cut_counts: dict[str,
+int]`, computed in `MainWindow.refresh_playlist()` from
+`project.get_entry(rel).cuts`. This is a snapshot, not reactive -- adding,
+editing, or deleting a cut only updates `InspectorPanel`/`TimelineWidget`
+via `_refresh_cuts_and_status()` unless `refresh_playlist()` is *also*
+called. `_on_add_cut()` and `_on_delete_cut()` both call it (the count
+changes); `_on_edit_cut()` deliberately doesn't (editing a cut's
+label/scores doesn't change how many cuts exist). If you add another
+cut-mutating action, decide the same way: does the *count* change, not
+just the cut's contents?
+
+### Cross-video continuation (REQUIREMENT.md #11): a single shared id, matched one hop at a time
+
+Design chosen explicitly with the user (out of three options presented --
+simple visual flags only, this one, or a full multi-segment annotation
+schema) before implementing:
+
+- `Cut.continuation_id: str | None` + `Cut.continues_forward: bool`. A
+  front half (`continues_forward=True`) has a *fresh* id; a back half
+  (`continues_forward=False`, `continuation_id` set) carries the *same*
+  id as whatever front half it completes. See `models/cut.py`'s
+  docstring.
+- **`Project.pending_continuation(rel_path, previous_rel_path)`** is the
+  only piece of matching logic: does the *immediately preceding* video
+  (by playlist order) have a `continues_forward` cut whose
+  `continuation_id` doesn't yet appear in the current video's cuts? It
+  only ever looks one hop backward -- it does not walk an arbitrary chain.
+- **A single id can still correctly represent a 3+-video chain** without
+  any change to that one-hop matching logic: if a middle video's cut both
+  completes the link from the video before it *and* continues into the
+  video after it, `MainWindow._on_add_cut()` reuses the same
+  `continuation_id` (doesn't mint a new one) when `continues_forward` is
+  checked *and* `completing_continuation_id()` was already set. Since
+  matching is purely local (one hop, using whatever id happens to match),
+  propagating one id straight through every cut in the chain links each
+  adjacent pair correctly on its own -- there was no need to design a
+  separate multi-segment structure for this to work. Covered by
+  `test_pending_continuation_chain_across_three_videos`. If you ever
+  change `pending_continuation()` to look more than one hop ahead/behind,
+  re-verify this property still holds.
+- The front half's `end` is **not** something the user marks -- checking
+  "Continues into next video" in `InspectorPanel` relaxes
+  `_refresh_button_states()` to only require Mark In, and
+  `MainWindow._on_add_cut()` substitutes `video_panel.duration()` for the
+  end time. Whatever Mark Out happened to be set to is ignored in that
+  case.
+- The back half is started via `InspectorPanel._on_start_continuation()`
+  (the banner's "Start Here" button): pre-fills label/scores from the
+  front-half cut, sets Mark In = 0:00, and remembers
+  `completing_continuation_id` for the *next* Add Annotation to attach.
+  Selecting an *existing* cut for editing (a different flow, sharing the
+  same widgets) explicitly clears that remembered id --
+  `completing_continuation_id`/the checkbox belong to the add/complete
+  flow, not the edit-in-place flow.
+- `MainWindow._refresh_pending_continuation()` is called after
+  `_on_video_selected()` (video changed) and at the end of `_on_add_cut()`
+  (this add may have just completed the pending one) -- it's the only
+  place that recomputes whether the banner should show, and also disables
+  the checkbox via `set_continuation_allowed()` when there's no next
+  video to continue into.
+
 ## Branches
 
 - `main` is the development branch (default; everything lands here first).
 - `stable` (renamed from `prod`) is the "deployment" branch — for this
   project, deployment means the user running the app locally on their own
-  Mac. Merge `main` into `stable` only for versions considered
-  stable/run-worthy, not on every commit.
+  Mac. Merge `main` into `stable` **only when the user says so** — they've
+  been explicit each time ("main only, we'll copy it to stable once it's
+  tested and working") that new work sits on `main` for their own manual
+  testing first. Don't promote to `stable` on your own initiative just
+  because tests pass; that's a separate, user-triggered step.
+- The repo is on GitHub: `origin` ->
+  `https://github.com/Dristro/video-annotation-tool.git`, both `main` and
+  `stable` tracked. The user pushes; don't `git push` unless asked. A
+  `LICENSE` (MIT) exists at the repo root — the user added it directly on
+  GitHub, not through this codebase.
+- **Status as of 2026-08-22** (check `git log stable..main --oneline` for
+  the current truth — this note will go stale): `main` is 4 commits ahead
+  of `stable`, none yet promoted --
+  playlist-annotation-counts/single-scrub-control/timeline-double-click-edit/
+  label-contrast-fix/arrow-key-navigation-fix, cross-video continuing
+  annotations (REQUIREMENT.md #11), the play/pause button-resize fix +
+  notched playback-speed slider (REQUIREMENT.md #12), and the LICENSE
+  file. All are implemented, tested (152 tests passing at last count), and
+  verified via real launches, but are waiting on the user's own hands-on
+  testing before being merged into `stable`.
 - **`main` and `stable` each have their own `README.md`** (`main`'s is
   contributor-facing, `stable`'s is user-facing) -- this is deliberate, the
   project is meant to be pushed to GitHub for others to use and contribute
@@ -354,7 +641,24 @@ python3 -m venv .venv
   is simply never created), but still don't rely on that -- UI controller
   tests use an *empty* videos directory and poke
   `MainWindow._current_video_path` directly instead, consistent with
-  `tests/test_ui_controller.py`.
+  `tests/test_ui_controller.py`. If a test genuinely needs
+  `refresh_playlist()` to run against a real file (e.g. to exercise its
+  filesystem scan or the annotation-count computation), stub
+  `window.video_panel.load = lambda path: None` first so the row-0
+  auto-selection cascade can't reach real player construction --
+  `test_refresh_playlist_includes_annotation_counts` in
+  `test_ui_controller.py` is the reference example. For a test that needs
+  *two* real videos to step between (playlist navigation, cross-video
+  continuation), `two_video_window` in the same file is the reference
+  fixture.
+- **`QWidget.isVisible()` is `False` for everything until the top-level
+  window is actually `.show()`n** (which these tests never do -- no real
+  display). Don't assert on `.isVisible()` for a widget under test (e.g.
+  `InspectorPanel`'s continuation banner); assert on the underlying state
+  instead (`panel._pending_continuation_cut is not None`, the label
+  text, etc.). Reproduced this for real while writing the continuation
+  feature's manual verification script -- the banner's text was set
+  correctly but `.isVisible()` still read `False`.
 - Core logic (models, project_store, annotation_store, video_scanner,
   Project facade) has no Qt/mpv dependency and is straightforward to test
   directly — prefer adding coverage there over UI-level tests.

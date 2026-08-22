@@ -55,6 +55,73 @@ def test_update_cut_can_replace_scores(tmp_project_dir):
     assert store.get_entry("a.mp4").cuts[0].scores == {"Technique": 75}
 
 
+def test_update_cut_preserves_continuation_fields(tmp_project_dir):
+    store = AnnotationStore.create(tmp_project_dir)
+    cut = store.add_cut(
+        "a.mp4",
+        Cut(start=1.0, end=2.0, label="goal", continuation_id="abc123", continues_forward=True),
+    )
+    # Editing label/scores must not sever a continuation link -- only
+    # explicit continuation-related mutations should ever change these.
+    store.update_cut("a.mp4", cut.id, label="foul", scores={"Technique": 90})
+    updated = store.get_entry("a.mp4").cuts[0]
+    assert updated.continuation_id == "abc123"
+    assert updated.continues_forward is True
+
+
+def test_update_cut_without_justification_arg_preserves_existing_justification(tmp_project_dir):
+    store = AnnotationStore.create(tmp_project_dir)
+    cut = store.add_cut("a.mp4", Cut(start=1.0, end=2.0, label="goal", justification="clear foul"))
+    store.update_cut("a.mp4", cut.id, label="foul")
+    assert store.get_entry("a.mp4").cuts[0].justification == "clear foul"
+
+
+def test_update_cut_can_replace_justification(tmp_project_dir):
+    store = AnnotationStore.create(tmp_project_dir)
+    cut = store.add_cut("a.mp4", Cut(start=1.0, end=2.0, justification="first draft"))
+    store.update_cut("a.mp4", cut.id, justification="revised reasoning")
+    assert store.get_entry("a.mp4").cuts[0].justification == "revised reasoning"
+
+
+def test_update_cut_can_clear_justification_with_empty_string(tmp_project_dir):
+    store = AnnotationStore.create(tmp_project_dir)
+    cut = store.add_cut("a.mp4", Cut(start=1.0, end=2.0, justification="no longer relevant"))
+    store.update_cut("a.mp4", cut.id, justification="")
+    assert store.get_entry("a.mp4").cuts[0].justification == ""
+
+
+def test_break_continuation_preserves_justification(tmp_project_dir):
+    store = AnnotationStore.create(tmp_project_dir)
+    cut = store.add_cut(
+        "a.mp4",
+        Cut(start=1.0, end=2.0, justification="why", continuation_id="abc123", continues_forward=True),
+    )
+    updated = store.break_continuation("a.mp4", cut.id)
+    assert updated.justification == "why"
+
+
+def test_break_continuation_clears_fields(tmp_project_dir):
+    store = AnnotationStore.create(tmp_project_dir)
+    cut = store.add_cut(
+        "a.mp4",
+        Cut(start=1.0, end=2.0, label="goal", continuation_id="abc123", continues_forward=True),
+    )
+    updated = store.break_continuation("a.mp4", cut.id)
+    assert updated.continuation_id is None
+    assert updated.continues_forward is False
+    # Everything else about the cut is untouched.
+    assert updated.start == 1.0
+    assert updated.end == 2.0
+    assert updated.label == "goal"
+
+
+def test_break_continuation_missing_cut_raises(tmp_project_dir):
+    store = AnnotationStore.create(tmp_project_dir)
+    store.add_cut("a.mp4", Cut(start=1.0, end=2.0))
+    with pytest.raises(CutNotFoundError):
+        store.break_continuation("a.mp4", "does-not-exist")
+
+
 def test_update_missing_cut_raises(tmp_project_dir):
     store = AnnotationStore.create(tmp_project_dir)
     store.add_cut("a.mp4", Cut(start=1.0, end=2.0))

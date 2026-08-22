@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QLineEdit
+from PySide6.QtWidgets import QKeySequenceEdit, QLineEdit
 
 
 class TransportLineEdit(QLineEdit):
@@ -34,4 +34,27 @@ class TransportLineEdit(QLineEdit):
             self.arrow_key_pressed.emit(self.ARROW_KEYS[event.key()])
             event.accept()
             return
+        super().keyPressEvent(event)
+
+
+class SingleStrokeKeySequenceEdit(QKeySequenceEdit):
+    """A QKeySequenceEdit that only ever records the single most recent key
+    combination, rather than Qt's default behavior of accumulating up to 4
+    presses into a multi-stroke *chord* (e.g. "Ctrl+K, Ctrl+G", the
+    VSCode-style two-step shortcut).
+
+    Reported as a real bug: "multi-key shortcuts not working". Root cause,
+    reproduced directly: pressing Ctrl+G then, to correct it, pressing
+    Ctrl+Shift+G does *not* replace the recorded value -- it appends,
+    silently producing "Ctrl+G, Ctrl+Shift+G". That's a shortcut requiring
+    both combos pressed in sequence, with zero visual indication anything
+    but a plain single combo was recorded, so a single press of either
+    combo alone appeared to just do nothing. Label shortcuts (the only use
+    of QKeySequenceEdit in this app) are plain "press this combo" bindings,
+    never chords, so each fresh key press clears the field first --
+    always replacing, never extending.
+    """
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        self.clear()
         super().keyPressEvent(event)

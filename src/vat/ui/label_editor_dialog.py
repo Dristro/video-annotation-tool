@@ -9,7 +9,6 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QHeaderView,
-    QKeySequenceEdit,
     QLineEdit,
     QMessageBox,
     QPushButton,
@@ -21,6 +20,7 @@ from PySide6.QtWidgets import (
 
 from vat.errors import DuplicateLabelError, LabelNotFoundError
 from vat.project.project import Project
+from vat.ui.widgets import SingleStrokeKeySequenceEdit
 
 _COLUMNS = ["#", "Name", "Description", "Shortcut"]
 
@@ -37,7 +37,7 @@ class _LabelFormDialog(QDialog):
         form = QFormLayout()
         self._name_edit = QLineEdit(name)
         self._description_edit = QLineEdit(description)
-        self._shortcut_edit = QKeySequenceEdit(QKeySequence(shortcut))
+        self._shortcut_edit = SingleStrokeKeySequenceEdit(QKeySequence(shortcut))
         form.addRow("Name:", self._name_edit)
         form.addRow("Description:", self._description_edit)
         form.addRow("Shortcut:", self._shortcut_edit)

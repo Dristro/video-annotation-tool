@@ -4,9 +4,10 @@ pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QEvent, Qt  # noqa: E402
 from PySide6.QtGui import QKeyEvent  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from vat.ui.widgets import TransportLineEdit  # noqa: E402
+from vat.ui.widgets import SingleStrokeKeySequenceEdit, TransportLineEdit  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -66,3 +67,38 @@ def test_modified_arrow_keys_are_not_intercepted(qapp):
     _press(edit, Qt.Key.Key_Left, modifiers=Qt.KeyboardModifier.ShiftModifier)
 
     assert seen == []
+
+
+def test_single_stroke_key_sequence_edit_records_one_combo(qapp):
+    edit = SingleStrokeKeySequenceEdit()
+    edit.show()
+
+    QTest.keyClick(edit, Qt.Key.Key_G, Qt.KeyboardModifier.ControlModifier)
+
+    assert edit.keySequence().toString() == "Ctrl+G"
+
+
+def test_single_stroke_key_sequence_edit_replaces_not_appends(qapp):
+    # Regression test: plain QKeySequenceEdit accumulates up to 4 presses
+    # into a multi-stroke chord by default -- pressing Ctrl+G, then
+    # Ctrl+Shift+G to correct it, silently produced "Ctrl+G, Ctrl+Shift+G"
+    # (a two-step chord) instead of replacing the recording. Reported as
+    # a real bug ("multi-key shortcuts not working").
+    edit = SingleStrokeKeySequenceEdit()
+    edit.show()
+
+    QTest.keyClick(edit, Qt.Key.Key_G, Qt.KeyboardModifier.ControlModifier)
+    QTest.keyClick(edit, Qt.Key.Key_G, Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)
+
+    assert edit.keySequence().toString() == "Ctrl+Shift+G"
+
+
+def test_single_stroke_key_sequence_edit_multiple_corrections(qapp):
+    edit = SingleStrokeKeySequenceEdit()
+    edit.show()
+
+    QTest.keyClick(edit, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
+    QTest.keyClick(edit, Qt.Key.Key_B, Qt.KeyboardModifier.AltModifier)
+    QTest.keyClick(edit, Qt.Key.Key_C, Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)
+
+    assert edit.keySequence().toString() == "Ctrl+Shift+C"

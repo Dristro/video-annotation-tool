@@ -26,6 +26,14 @@ class PlaylistPanel(QWidget):
         super().__init__(parent)
         self._paths_by_row: list[str] = []
         self._rel_paths_by_row: list[str] = []
+        # rel_path -> already-decoded QIcon. set_videos() rebuilds the list
+        # from scratch (clear() + addItem()), which drops every row's icon,
+        # and ThumbnailLoader deliberately reports each thumbnail only once
+        # per session -- so without this cache the thumbnails vanished on
+        # the next refresh_playlist() and never came back. Caching the
+        # QIcon rather than the path also avoids re-decoding the JPEG from
+        # disk on every rebuild.
+        self._icons: dict[str, QIcon] = {}
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
@@ -45,7 +53,8 @@ class PlaylistPanel(QWidget):
         thumbnails: dict[str, str] | None = None,
     ) -> None:
         cut_counts = cut_counts or {}
-        thumbnails = thumbnails or {}
+        for rel_path, thumbnail in (thumbnails or {}).items():
+            self._icons[rel_path] = QIcon(thumbnail)
         previous_path = self.current_path()
         self._list.blockSignals(True)
         self._list.clear()
@@ -59,9 +68,9 @@ class PlaylistPanel(QWidget):
             count_part = f"  ({count})" if count else ""
             item = QListWidgetItem(f"{marker}  {video.rel_path}{count_part}")
             item.setForeground(ANNOTATED_COLOR if annotated else NOT_ANNOTATED_COLOR)
-            thumbnail_path = thumbnails.get(video.rel_path)
-            if thumbnail_path:
-                item.setIcon(QIcon(thumbnail_path))
+            icon = self._icons.get(video.rel_path)
+            if icon is not None:
+                item.setIcon(icon)
             self._list.addItem(item)
             self._paths_by_row.append(video.path)
             self._rel_paths_by_row.append(video.rel_path)
@@ -83,6 +92,11 @@ class PlaylistPanel(QWidget):
         elif self._paths_by_row:
             self._list.setCurrentRow(0)
         self._list.blockSignals(False)
+        # Drop icons for videos that are no longer listed (a different
+        # videos directory, or a different project) so the cache can't grow
+        # without bound across project switches.
+        known = set(self._rel_paths_by_row)
+        self._icons = {rel: icon for rel, icon in self._icons.items() if rel in known}
         # Only notify if the selection actually changed (a different video
         # is current now than before this refresh, e.g. first-ever
         # population, or the previously-selected video no longer exists).
@@ -96,11 +110,16 @@ class PlaylistPanel(QWidget):
         set_videos() already ran (ThumbnailLoader); rebuilding the whole
         list per arrival would re-fire currentRowChanged (reloading the
         selected video) for no reason on every single thumbnail.
+
+        The icon is also remembered so a later set_videos() rebuild can
+        restore it without the loader having to report it again.
         """
         if rel_path not in self._rel_paths_by_row:
             return
+        icon = QIcon(thumbnail_path)
+        self._icons[rel_path] = icon
         row = self._rel_paths_by_row.index(rel_path)
-        self._list.item(row).setIcon(QIcon(thumbnail_path))
+        self._list.item(row).setIcon(icon)
 
     def current_path(self) -> str | None:
         row = self._list.currentRow()

@@ -128,6 +128,39 @@ def test_set_thumbnail_does_not_change_selection(qapp, tmp_path):
     assert selections == []  # setting an icon must never re-trigger video_selected
 
 
+def test_thumbnails_survive_a_set_videos_rebuild(qapp, tmp_path):
+    # set_videos() clear()s and rebuilds every row, dropping their icons.
+    # ThumbnailLoader deliberately reports each thumbnail only once per
+    # session (re-checking 289 videos on every refresh_playlist() is what
+    # made "Mark Annotated" freeze), so the panel has to remember them --
+    # otherwise the thumbnails vanished on the next mutating action and
+    # never came back.
+    thumb_path = tmp_path / "thumb.jpg"
+    QPixmap(4, 4).save(str(thumb_path), "JPG")
+
+    panel = PlaylistPanel()
+    panel.set_videos(_videos("a.mp4", "b.mp4"), {})
+    panel.set_thumbnail("b.mp4", str(thumb_path))
+
+    panel.set_videos(_videos("a.mp4", "b.mp4"), {"b.mp4": True}, {"b.mp4": 3})
+
+    assert panel._list.item(1).icon().isNull() is False
+    assert panel._list.item(0).icon().isNull() is True
+
+
+def test_thumbnail_cache_drops_videos_that_are_gone(qapp, tmp_path):
+    thumb_path = tmp_path / "thumb.jpg"
+    QPixmap(4, 4).save(str(thumb_path), "JPG")
+
+    panel = PlaylistPanel()
+    panel.set_videos(_videos("a.mp4"), {})
+    panel.set_thumbnail("a.mp4", str(thumb_path))
+
+    panel.set_videos(_videos("z.mp4"), {})
+
+    assert "a.mp4" not in panel._icons
+
+
 def test_set_thumbnail_unknown_rel_path_is_a_noop(qapp):
     panel = PlaylistPanel()
     panel.set_videos(_videos("a.mp4"), {})

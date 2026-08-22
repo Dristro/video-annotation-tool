@@ -136,8 +136,7 @@ def test_add_cut_does_not_reload_currently_selected_video(window):
 
 
 def test_label_shortcut_registered(window):
-    shortcuts = [s.key().toString() for s in window._label_shortcuts]
-    assert "G" in shortcuts
+    assert "G" in window._label_shortcuts.shortcut_texts()
 
 
 @pytest.fixture
@@ -717,6 +716,49 @@ def test_refresh_playlist_does_not_extract_thumbnails_synchronously(window, monk
         QApplication.processEvents()
     assert calling_threads  # extraction did happen (just not on the caller's thread)
     assert threading.main_thread() not in calling_threads
+
+
+def test_mark_annotated_does_not_re_queue_thumbnail_work(window, monkeypatch):
+    # Regression test for the reported freeze: moving extraction off the
+    # main thread wasn't enough on its own. refresh_playlist() runs on
+    # nearly every mutating action, and each run used to re-queue every
+    # video whose thumbnail wasn't cached yet -- one fresh thread and one
+    # fresh ffmpeg process each. Against the real 289-video project that
+    # blocked the *main* thread for ~1.5 s per "Mark Annotated" click, and
+    # since the extractions themselves were failing, no cache file was ever
+    # written to break the cycle.
+    import threading
+    import time
+
+    from vat.playback import thumbnail_loader as thumbnail_loader_module
+
+    attempts = []
+    monkeypatch.setattr(
+        thumbnail_loader_module,
+        "get_or_create_thumbnail",
+        lambda video_path, cache_dir: attempts.append(video_path) or None,
+    )
+
+    open(os.path.join(window.project.config.videos_dir, "a.mp4"), "wb").close()
+    window.video_panel.load = lambda path: None
+    window.refresh_playlist()
+
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and not attempts:
+        QApplication.processEvents()
+    assert len(attempts) == 1
+
+    window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    threads_before = threading.active_count()
+    for _ in range(10):
+        window._on_set_annotated(True)
+        window._on_set_annotated(False)
+
+    deadline = time.monotonic() + 0.5
+    while time.monotonic() < deadline:
+        QApplication.processEvents()
+    assert attempts == attempts[:1]  # not one retry across 20 mark/unmark clicks
+    assert threading.active_count() <= threads_before
 
 
 def test_refresh_playlist_includes_annotation_counts(window):

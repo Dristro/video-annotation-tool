@@ -17,6 +17,7 @@ from vat.playback.waveform_loader import WaveformLoader
 from vat.project.project import Project
 from vat.project.undo_stack import Command, UndoStack
 from vat.ui.inspector_panel import InspectorPanel
+from vat.ui.label_shortcuts import LabelShortcutManager
 from vat.ui.playlist_panel import PlaylistPanel
 from vat.ui.project_settings_dialog import ProjectSettingsDialog
 from vat.ui.theme import apply_theme
@@ -73,7 +74,8 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(2, 1)
         self.setCentralWidget(splitter)
 
-        self._label_shortcuts: list[QShortcut] = []
+        self._label_shortcuts = LabelShortcutManager(self)
+        self._label_shortcuts.label_activated.connect(self.inspector_panel.select_label)
 
         self._build_menu()
         self._wire_signals()
@@ -202,19 +204,13 @@ class MainWindow(QMainWindow):
     def _register_label_shortcuts(self) -> None:
         """(Re)bind each label's custom shortcut key to select it in the inspector.
 
-        Called on startup and after any label edit/rename/project switch, since
-        the set of valid shortcuts can change at any time (REQUIREMENT.md: label
-        shortcuts are editable after project creation).
+        Delegated to LabelShortcutManager rather than one plain QShortcut
+        per label: Qt's shortcut map prefers an exact match over a partial
+        one, which makes a chord like "S, L" unreachable whenever a bare
+        "S" is also bound (see that class's docstring -- this project's own
+        label set hits it three times).
         """
-        for shortcut in self._label_shortcuts:
-            shortcut.setParent(None)
-        self._label_shortcuts.clear()
-        for label in self.project.config.labels:
-            if not label.shortcut:
-                continue
-            shortcut = QShortcut(QKeySequence(label.shortcut), self)
-            shortcut.activated.connect(lambda name=label.name: self.inspector_panel.select_label(name))
-            self._label_shortcuts.append(shortcut)
+        self._label_shortcuts.set_labels(self.project.config.labels)
 
     # -- Playlist / video selection ------------------------------------------------------------
     def refresh_playlist(self) -> None:

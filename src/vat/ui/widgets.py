@@ -43,16 +43,19 @@ class SingleStrokeKeySequenceEdit(QKeySequenceEdit):
     presses into a multi-stroke *chord* (e.g. "Ctrl+K, Ctrl+G", the
     VSCode-style two-step shortcut).
 
-    Reported as a real bug: "multi-key shortcuts not working". Root cause,
-    reproduced directly: pressing Ctrl+G then, to correct it, pressing
+    Reported as a real bug: pressing Ctrl+G then, to correct it, pressing
     Ctrl+Shift+G does *not* replace the recorded value -- it appends,
     silently producing "Ctrl+G, Ctrl+Shift+G". That's a shortcut requiring
     both combos pressed in sequence, with zero visual indication anything
     but a plain single combo was recorded, so a single press of either
-    combo alone appeared to just do nothing. Label shortcuts (the only use
-    of QKeySequenceEdit in this app) are plain "press this combo" bindings,
-    never chords, so each fresh key press clears the field first --
-    always replacing, never extending.
+    combo alone appeared to just do nothing. Each fresh key press therefore
+    clears the field first -- always replacing, never extending.
+
+    Two-key label shortcuts ("S, L") are a real, supported thing, but they
+    are *not* recorded by accumulating into one of these. `_LabelFormDialog`
+    uses two of these fields side by side ("Shortcut" and "Then"), so the
+    second stroke is always something the user opted into explicitly and
+    correcting either one can never silently turn into a longer sequence.
     """
 
     def keyPressEvent(self, event) -> None:  # noqa: N802 (Qt override)

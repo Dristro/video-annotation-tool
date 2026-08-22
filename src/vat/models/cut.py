@@ -7,12 +7,19 @@ from dataclasses import dataclass, field
 @dataclass
 class Cut:
     """A single start/end marker within a video, optionally tagged with a
-    label name and optional named scores (e.g. {"Technique": 87.5}).
+    label name, optional named scores (e.g. {"Technique": 87.5}), and an
+    optional free-text justification/description.
 
     The label and score names are stored as plain strings/keys (not
     foreign-key ids) so that the annotations file stays self-describing and
     readable on its own, per the requirement that the annotation file must
     be a public, portable artifact.
+
+    `justification` is a third, always-optional kind of per-cut input
+    alongside the label and scores -- unlike scores, it's not a
+    project-configurable set of named fields (no enable/disable, no
+    definitions list): just one plain free-text field, present on every
+    cut, never required regardless of project config.
 
     `continuation_id`/`continues_forward` model an annotation that spans
     past this video's end into the start of the next video in the
@@ -29,6 +36,7 @@ class Cut:
     end: float
     label: str = ""
     scores: dict[str, float] = field(default_factory=dict)
+    justification: str = ""
     continuation_id: str | None = None
     continues_forward: bool = False
     id: str = field(default_factory=lambda: uuid.uuid4().hex)
@@ -40,6 +48,7 @@ class Cut:
             raise ValueError("Cut end must be >= start")
         self.label = self.label.strip()
         self.scores = dict(self.scores)  # defensive copy: don't alias the caller's dict
+        self.justification = self.justification.strip()
 
     def to_dict(self) -> dict:
         return {
@@ -48,6 +57,7 @@ class Cut:
             "end": self.end,
             "label": self.label,
             "scores": dict(self.scores),
+            "justification": self.justification,
             "continuation_id": self.continuation_id,
             "continues_forward": self.continues_forward,
         }
@@ -60,6 +70,7 @@ class Cut:
             end=float(data["end"]),
             label=data.get("label", ""),
             scores=dict(data.get("scores", {})),
+            justification=data.get("justification", ""),
             continuation_id=data.get("continuation_id"),
             continues_forward=bool(data.get("continues_forward", False)),
         )

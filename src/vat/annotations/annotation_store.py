@@ -74,7 +74,8 @@ class AnnotationStore:
 
     def update_cut(self, rel_path: str, cut_id: str, start: float | None = None,
                     end: float | None = None, label: str | None = None,
-                    scores: dict[str, float] | None = None) -> Cut:
+                    scores: dict[str, float] | None = None,
+                    justification: str | None = None) -> Cut:
         entry = self.videos.get(rel_path)
         if entry is None:
             raise CutNotFoundError(f"No entry for video '{rel_path}'")
@@ -86,6 +87,10 @@ class AnnotationStore:
                 # None means "leave scores untouched", not "clear them" --
                 # only replace when a scores dict is explicitly passed.
                 new_scores = dict(cut.scores) if scores is None else dict(scores)
+                # Same None-means-unchanged convention as label -- an
+                # explicit "" does clear it (justification is optional, so
+                # clearing it back to empty is a legitimate edit).
+                new_justification = cut.justification if justification is None else justification
                 # continuation_id/continues_forward aren't editable through
                 # this method (no caller passes them) -- carry them over
                 # from the existing cut rather than letting the Cut()
@@ -93,6 +98,7 @@ class AnnotationStore:
                 # would silently sever a continuation link on any edit.
                 updated = Cut(
                     id=cut.id, start=new_start, end=new_end, label=new_label, scores=new_scores,
+                    justification=new_justification,
                     continuation_id=cut.continuation_id, continues_forward=cut.continues_forward,
                 )
                 entry.cuts[entry.cuts.index(cut)] = updated
@@ -116,6 +122,7 @@ class AnnotationStore:
             if cut.id == cut_id:
                 updated = Cut(
                     id=cut.id, start=cut.start, end=cut.end, label=cut.label, scores=dict(cut.scores),
+                    justification=cut.justification,
                     continuation_id=None, continues_forward=False,
                 )
                 entry.cuts[entry.cuts.index(cut)] = updated

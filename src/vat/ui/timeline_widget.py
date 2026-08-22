@@ -181,6 +181,8 @@ class TimelineWidget(QWidget):
             lines.append(cut.label)
         for name, value in cut.scores.items():
             lines.append(f"{name}: {value:g}")
+        if cut.justification:
+            lines.append(cut.justification)
         tag = _continuation_tag(cut)
         if tag:
             lines.append(f"continuation{tag}")

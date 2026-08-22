@@ -58,6 +58,10 @@ time.
     play/pause button and the elapsed-time display, lets the user change playback speed (e.g.
     0.25x-2x) while reviewing a video. Snaps to a fixed set of speed steps rather than an
     arbitrary continuous value.
+13. Justification/description (optional, per-cut): alongside the label and scores, a cut may
+    have a free-text justification/description explaining it. Always optional -- unlike scores,
+    it is a single plain field, not a project-configurable set, and it is never required
+    regardless of whether scoring is enabled or how many scores are defined.
 
 
 ## Non-functional requirements
@@ -120,6 +124,12 @@ time.
   it in if they choose to, without anything being enforced.
 * A score may have a description (free text) explaining what it means, editable alongside its name/
   range/dtype in the score editor.
+
+### Justification / Description:
+* An optional, always-optional free-text field on a cut, alongside its label and scores.
+* Unlike scores, it is not a project-configurable set of named fields -- there is exactly one such
+  field per cut, with no enable/disable setting and no per-project definitions list.
+* Never required to add or edit a cut, regardless of whether scoring is enabled.
 
 ### Cross-video continuation:
 * Two cuts, in adjacent videos in the playlist, linked as the two halves of one annotation that

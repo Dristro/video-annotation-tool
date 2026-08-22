@@ -123,6 +123,20 @@ def test_hover_over_cut_shows_tooltip_with_scores(timeline, monkeypatch):
     assert "Technique: 87.5" in shown[0]
 
 
+def test_hover_over_cut_shows_justification_in_tooltip(timeline, monkeypatch):
+    cut = Cut(start=1.0, end=2.0, label="goal", justification="clean strike, top corner")
+    timeline.set_cuts([cut])
+
+    shown = []
+    monkeypatch.setattr(QToolTip, "showText", lambda pos, text, widget: shown.append(text))
+
+    x = int(timeline._x_for_time(1.5))
+    help_event = QHelpEvent(QEvent.Type.ToolTip, QPoint(x, 20), QPoint(x, 20))
+    timeline.event(help_event)
+
+    assert "clean strike, top corner" in shown[0]
+
+
 def test_hover_away_from_any_cut_does_not_show_tooltip(timeline, monkeypatch):
     cut = Cut(start=1.0, end=2.0, label="goal")
     timeline.set_cuts([cut])

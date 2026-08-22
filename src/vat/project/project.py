@@ -67,13 +67,13 @@ class Project:
     # -- Cuts ------------------------------------------------------------
     def add_cut(
         self, rel_path: str, start: float, end: float, label: str = "",
-        scores: dict[str, float] | None = None,
+        scores: dict[str, float] | None = None, justification: str = "",
         continuation_id: str | None = None, continues_forward: bool = False,
     ) -> Cut:
         return self.annotation_store.add_cut(
             rel_path,
             Cut(
-                start=start, end=end, label=label, scores=dict(scores or {}),
+                start=start, end=end, label=label, scores=dict(scores or {}), justification=justification,
                 continuation_id=continuation_id, continues_forward=continues_forward,
             ),
         )

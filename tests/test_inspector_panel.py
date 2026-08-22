@@ -22,6 +22,77 @@ def panel(qapp):
     return p
 
 
+def test_pending_justification_defaults_empty(panel):
+    assert panel.pending_justification() == ""
+
+
+def test_pending_justification_returns_stripped_text(panel):
+    panel._justification_input.setText("  clear foul, hand ball  ")
+    assert panel.pending_justification() == "clear foul, hand ball"
+
+
+def test_clear_pending_clears_justification(panel):
+    panel._justification_input.setText("some notes")
+    panel.clear_pending()
+    assert panel.pending_justification() == ""
+
+
+def test_selecting_a_cut_prefills_justification(panel):
+    cut = Cut(start=1.0, end=2.0, label="goal", justification="clean strike, top corner")
+    panel.set_cuts([cut], [], False)
+
+    panel.select_cut_by_id(cut.id)
+
+    assert panel.pending_justification() == "clean strike, top corner"
+
+
+def test_selecting_a_cut_without_justification_blanks_field(panel):
+    panel._justification_input.setText("stale text from a previous selection")
+    cut = Cut(start=1.0, end=2.0, label="goal")
+    panel.set_cuts([cut], [], False)
+
+    panel.select_cut_by_id(cut.id)
+
+    assert panel.pending_justification() == ""
+
+
+def test_start_here_prefills_justification_from_front_half(panel):
+    cut = Cut(
+        start=280.0, end=300.0, label="goal", justification="ends here",
+        continuation_id="link1", continues_forward=True,
+    )
+    panel.set_pending_continuation(cut)
+
+    panel._on_start_continuation()
+
+    assert panel.pending_justification() == "ends here"
+
+
+def test_set_cuts_shows_truncated_justification_in_list(panel):
+    cut = Cut(start=1.0, end=2.0, label="goal", justification="clean strike, top corner")
+    panel.set_cuts([cut], [], False)
+
+    assert "clean strike, top corner" in panel._cuts_list.item(0).text()
+
+
+def test_set_cuts_truncates_long_justification(panel):
+    long_text = "x" * 100
+    cut = Cut(start=1.0, end=2.0, label="goal", justification=long_text)
+    panel.set_cuts([cut], [], False)
+
+    text = panel._cuts_list.item(0).text()
+    assert "x" * 40 in text
+    assert "x" * 41 not in text
+    assert "…" in text
+
+
+def test_set_cuts_omits_justification_marker_when_absent(panel):
+    cut = Cut(start=1.0, end=2.0, label="goal")
+    panel.set_cuts([cut], [], False)
+
+    assert '"' not in panel._cuts_list.item(0).text()
+
+
 def test_continues_checkbox_relaxes_mark_out_requirement(panel):
     panel.set_pending_in(10.0)
     assert panel._add_cut_btn.isEnabled() is False  # no Mark Out yet

@@ -69,6 +69,37 @@ def test_update_cut_preserves_continuation_fields(tmp_project_dir):
     assert updated.continues_forward is True
 
 
+def test_update_cut_without_justification_arg_preserves_existing_justification(tmp_project_dir):
+    store = AnnotationStore.create(tmp_project_dir)
+    cut = store.add_cut("a.mp4", Cut(start=1.0, end=2.0, label="goal", justification="clear foul"))
+    store.update_cut("a.mp4", cut.id, label="foul")
+    assert store.get_entry("a.mp4").cuts[0].justification == "clear foul"
+
+
+def test_update_cut_can_replace_justification(tmp_project_dir):
+    store = AnnotationStore.create(tmp_project_dir)
+    cut = store.add_cut("a.mp4", Cut(start=1.0, end=2.0, justification="first draft"))
+    store.update_cut("a.mp4", cut.id, justification="revised reasoning")
+    assert store.get_entry("a.mp4").cuts[0].justification == "revised reasoning"
+
+
+def test_update_cut_can_clear_justification_with_empty_string(tmp_project_dir):
+    store = AnnotationStore.create(tmp_project_dir)
+    cut = store.add_cut("a.mp4", Cut(start=1.0, end=2.0, justification="no longer relevant"))
+    store.update_cut("a.mp4", cut.id, justification="")
+    assert store.get_entry("a.mp4").cuts[0].justification == ""
+
+
+def test_break_continuation_preserves_justification(tmp_project_dir):
+    store = AnnotationStore.create(tmp_project_dir)
+    cut = store.add_cut(
+        "a.mp4",
+        Cut(start=1.0, end=2.0, justification="why", continuation_id="abc123", continues_forward=True),
+    )
+    updated = store.break_continuation("a.mp4", cut.id)
+    assert updated.justification == "why"
+
+
 def test_break_continuation_clears_fields(tmp_project_dir):
     store = AnnotationStore.create(tmp_project_dir)
     cut = store.add_cut(

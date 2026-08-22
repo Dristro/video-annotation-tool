@@ -295,6 +295,28 @@ before implementing (don't re-litigate without checking back):
     save visibly "stick" instead of the panel going blank right after
     editing.
 
+### Justification/description: a third input type, but not a set like scores
+
+Per REQUIREMENT.md #13. `Cut.justification: str = ""` -- a single plain
+free-text field, always optional, present on every cut regardless of
+project config. Deliberately **not** modeled like scores (no
+`enable/disable`, no per-project list of named definitions): the request
+was for one additional field alongside label/scores, not a
+project-configurable set of text fields. `InspectorPanel._justification_input`
+is a plain `QLineEdit`, not a `TransportLineEdit` -- unlike the short
+numeric score fields, free text genuinely needs normal in-field arrow-key
+cursor movement, so losing it isn't an acceptable tradeoff here.
+`AnnotationStore.update_cut(justification=...)` follows the same
+None-means-"leave unchanged" convention as `label` (not the dict-replace
+convention `scores` uses) -- an explicit `""` does clear it, since being
+optional means "allowed to be empty," not "can't be explicitly emptied."
+Threaded through every cut-mutating path that already threads
+label/scores (`_on_add_cut`, `_on_edit_cut`/`_apply_cut_snapshot`,
+`_on_cut_resized`, undo/redo, `break_continuation`) the same way
+`continuation_id`/`continues_forward` already had to be after the
+update_cut continuation-drop bug -- any new per-cut field added in the
+future needs the same audit across all of these, not just `add_cut`.
+
 ### The "annotated" flag is not just "has cuts"
 
 Per `REQUIREMENT.md`'s Definitions section: a video is annotated only once
@@ -381,6 +403,27 @@ behavior is identical whether or not a score field happens to have focus.
 If you add another always-must-work-regardless-of-focus keybinding, route
 it through `_on_navigate_requested()`'s direction-string pattern rather
 than inventing a new one-off mechanism.
+
+### SingleStrokeKeySequenceEdit: QKeySequenceEdit accumulates into chords by default
+
+`QKeySequenceEdit` records up to 4 key presses into a multi-stroke
+**chord** by default (e.g. "Ctrl+K, Ctrl+G", VSCode-style two-step
+shortcuts) -- it does not reset on a fresh press. Reproduced directly:
+pressing Ctrl+G, then pressing Ctrl+Shift+G to *correct* it, doesn't
+replace the recording -- it appends, silently producing "Ctrl+G,
+Ctrl+Shift+G" (now requiring both combos pressed in sequence), with zero
+visual indication anything but a plain single combo was recorded.
+Reported as a real bug: "multi-key shortcuts not working" -- users were
+accidentally creating unintended 2-stroke chords while adjusting a label
+shortcut, and a single press of either combo alone then appeared to do
+nothing. Label shortcuts (the only use of `QKeySequenceEdit` in this app)
+are plain "press this combo" bindings, never chords. Fixed in
+`ui/widgets.py`: `SingleStrokeKeySequenceEdit` calls `self.clear()` at the
+top of its own `keyPressEvent`, before `super()`, so every fresh key
+press replaces rather than extends. `_LabelFormDialog` uses it instead of
+plain `QKeySequenceEdit`. If you ever add another `QKeySequenceEdit`
+somewhere and *do* want real multi-stroke chord support, don't reuse this
+class -- it's specifically single-stroke-only by design.
 
 ### Playlist annotation counts need an explicit refresh trigger
 

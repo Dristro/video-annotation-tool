@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
@@ -27,14 +28,16 @@ from vat.ui.widgets import TransportLineEdit
 
 class InspectorPanel(QWidget):
     """Right-hand panel: mark in/out, assign a label (+ scores, if the
-    project has scoring enabled), manage cuts for the current video, and
+    project has scoring enabled, + an always-optional justification/
+    description text field), manage cuts for the current video, and
     confirm the video as annotated.
 
     Selecting a cut -- by clicking it on the timeline or in the cuts list
-    below -- loads its label and scores into the same input fields used to
-    add a new one, and enables "Edit Annotation". This is how an existing
-    annotation (e.g. one missing a score that was added to the project
-    later) gets filled in or corrected, rather than deleted and re-added.
+    below -- loads its label, scores, and justification into the same
+    input fields used to add a new one, and enables "Edit Annotation".
+    This is how an existing annotation (e.g. one missing a score that was
+    added to the project later) gets filled in or corrected, rather than
+    deleted and re-added.
 
     An annotation can also span past this video's end into the next one
     in the playlist: checking "Continues into next video" while adding one
@@ -126,6 +129,18 @@ class InspectorPanel(QWidget):
         edit_labels_btn.clicked.connect(self.edit_labels_requested)
         label_row.addWidget(edit_labels_btn)
         mark_layout.addLayout(label_row)
+
+        # A third, always-optional kind of per-cut input alongside the
+        # label and scores -- unlike scores, this is a single plain field,
+        # not a project-configurable set (no enable/disable, no
+        # definitions list), and it's never required regardless of
+        # whether scoring is enabled. Plain QLineEdit (not TransportLineEdit)
+        # on purpose: free text needs normal in-field arrow-key cursor
+        # movement, unlike the short numeric score fields where losing it
+        # is a deliberate, low-cost tradeoff.
+        self._justification_input = QLineEdit()
+        self._justification_input.setPlaceholderText("Justification / description (optional)")
+        mark_layout.addWidget(self._justification_input)
 
         # Score input rows are built/torn down dynamically by
         # set_score_definitions() based on the project's current config --
@@ -247,6 +262,9 @@ class InspectorPanel(QWidget):
 
         self._refresh_button_states()
 
+    def pending_justification(self) -> str:
+        return self._justification_input.text().strip()
+
     def pending_scores(self) -> dict[str, float]:
         """Coerced, validated score values. Only meaningful when Add/Edit
         Annotation is enabled -- invalid/empty fields are simply omitted
@@ -336,6 +354,7 @@ class InspectorPanel(QWidget):
                 continue
             value = cut.scores.get(defn.name)
             edit.setText("" if value is None else f"{value:g}")
+        self._justification_input.setText(cut.justification)
         self._completing_continuation_id = cut.continuation_id
         self.set_pending_in(0.0)
         self.set_pending_out(None)
@@ -359,6 +378,7 @@ class InspectorPanel(QWidget):
         self._pending_out = None
         self._completing_continuation_id = None
         self._continues_checkbox.setChecked(False)
+        self._justification_input.clear()
         for edit in self._score_inputs.values():
             edit.clear()
         self._refresh_pending_label()
@@ -444,9 +464,18 @@ class InspectorPanel(QWidget):
                 continuation_part = f"  →continues{_continuation_tag(cut)}"
             elif cut.continuation_id:
                 continuation_part = f"  ←continued{_continuation_tag(cut)}"
+            # Truncated -- the full text is visible (and editable) once the
+            # cut is selected, this compact list just needs to flag that
+            # one exists rather than reproduce it in full.
+            justification_part = ""
+            if cut.justification:
+                snippet = cut.justification[:40]
+                if len(cut.justification) > 40:
+                    snippet += "…"
+                justification_part = f'  "{snippet}"'
             text = (
                 f"{format_time(cut.start)} – {format_time(cut.end)}{label_part}"
-                f"{scores_part}{incomplete_part}{continuation_part}"
+                f"{scores_part}{incomplete_part}{continuation_part}{justification_part}"
             )
             item = QListWidgetItem(text)
             self._cuts_list.addItem(item)
@@ -527,10 +556,12 @@ class InspectorPanel(QWidget):
                     continue
                 value = cut.scores.get(defn.name)
                 edit.setText("" if value is None else f"{value:g}")
+            self._justification_input.setText(cut.justification)
             self._break_continuation_btn.setVisible(cut.continuation_id is not None)
         else:
             for edit in self._score_inputs.values():
                 edit.clear()
+            self._justification_input.clear()
             self._break_continuation_btn.setVisible(False)
         self._pending_in = None
         self._pending_out = None

@@ -79,6 +79,23 @@ class TestCut:
         assert restored.continuation_id is None
         assert restored.continues_forward is False
 
+    def test_justification_defaults_empty(self):
+        assert Cut(start=0, end=1).justification == ""
+
+    def test_justification_strips_whitespace(self):
+        cut = Cut(start=0, end=1, justification="  because of X  ")
+        assert cut.justification == "because of X"
+
+    def test_justification_round_trip(self):
+        cut = Cut(start=1.0, end=2.0, justification="Clear foul, hand ball.")
+        restored = Cut.from_dict(cut.to_dict())
+        assert restored.justification == "Clear foul, hand ball."
+
+    def test_justification_default_when_absent_from_dict(self):
+        # Older annotations.json files predate this field entirely.
+        restored = Cut.from_dict({"id": "x", "start": 0, "end": 1, "label": ""})
+        assert restored.justification == ""
+
 
 class TestVideoEntry:
     def test_default_not_annotated_no_cuts(self):

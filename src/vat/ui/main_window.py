@@ -335,6 +335,7 @@ class MainWindow(QMainWindow):
             if confirm != QMessageBox.StandardButton.Yes:
                 return
         scores = self.inspector_panel.pending_scores()
+        justification = self.inspector_panel.pending_justification()
         # completing_continuation_id() is set when this Add Annotation is
         # finishing the back half of a continuation started in the
         # previous video (via the "Start Here" banner). If continues_forward
@@ -350,7 +351,7 @@ class MainWindow(QMainWindow):
         if continues_forward and continuation_id is None:
             continuation_id = uuid.uuid4().hex
         new_cut = self.project.add_cut(
-            rel, start, end, label, scores,
+            rel, start, end, label, scores, justification,
             continuation_id=continuation_id, continues_forward=continues_forward,
         )
         self._undo_stack.push(Command(
@@ -385,6 +386,7 @@ class MainWindow(QMainWindow):
         if old_cut is None:
             return
         scores = self.inspector_panel.pending_scores()
+        justification = self.inspector_panel.pending_justification()
         retime = self.inspector_panel.pending_retime()
         new_start, new_end = retime if retime is not None else (old_cut.start, old_cut.end)
         if retime is not None:
@@ -396,22 +398,25 @@ class MainWindow(QMainWindow):
                 )
                 if confirm != QMessageBox.StandardButton.Yes:
                     return
-        self._apply_cut_snapshot(rel, cut_id, new_start, new_end, label, scores)
+        self._apply_cut_snapshot(rel, cut_id, new_start, new_end, label, scores, justification)
         self._undo_stack.push(Command(
             undo=lambda: self._apply_cut_snapshot(
-                rel, cut_id, old_cut.start, old_cut.end, old_cut.label, old_cut.scores
+                rel, cut_id, old_cut.start, old_cut.end, old_cut.label, old_cut.scores, old_cut.justification
             ),
-            redo=lambda: self._apply_cut_snapshot(rel, cut_id, new_start, new_end, label, scores),
+            redo=lambda: self._apply_cut_snapshot(rel, cut_id, new_start, new_end, label, scores, justification),
         ))
 
     def _apply_cut_snapshot(
-        self, rel: str, cut_id: str, start: float, end: float, label: str, scores: dict,
+        self, rel: str, cut_id: str, start: float, end: float, label: str, scores: dict, justification: str = "",
     ) -> None:
-        """Overwrite a cut's start/end/label/scores in one shot -- shared
-        by _on_edit_cut and its undo/redo commands, since both are "make
-        this cut look like this snapshot" with no partial-field semantics.
+        """Overwrite a cut's start/end/label/scores/justification in one
+        shot -- shared by _on_edit_cut, _on_cut_resized, and their
+        undo/redo commands, since all of these are "make this cut look
+        like this snapshot" with no partial-field semantics.
         """
-        self.project.update_cut(rel, cut_id, start=start, end=end, label=label, scores=dict(scores))
+        self.project.update_cut(
+            rel, cut_id, start=start, end=end, label=label, scores=dict(scores), justification=justification,
+        )
         if self._current_video_path and self.project.rel_path(self._current_video_path) == rel:
             self._refresh_cuts_and_status(rel)
             # Re-select the same cut so the panel visibly reflects the
@@ -442,12 +447,14 @@ class MainWindow(QMainWindow):
             if confirm != QMessageBox.StandardButton.Yes:
                 self._refresh_cuts_and_status(rel)  # repaint the timeline back to the committed range
                 return
-        self._apply_cut_snapshot(rel, cut_id, start, end, old_cut.label, old_cut.scores)
+        self._apply_cut_snapshot(rel, cut_id, start, end, old_cut.label, old_cut.scores, old_cut.justification)
         self._undo_stack.push(Command(
             undo=lambda: self._apply_cut_snapshot(
-                rel, cut_id, old_cut.start, old_cut.end, old_cut.label, old_cut.scores
+                rel, cut_id, old_cut.start, old_cut.end, old_cut.label, old_cut.scores, old_cut.justification
             ),
-            redo=lambda: self._apply_cut_snapshot(rel, cut_id, start, end, old_cut.label, old_cut.scores),
+            redo=lambda: self._apply_cut_snapshot(
+                rel, cut_id, start, end, old_cut.label, old_cut.scores, old_cut.justification
+            ),
         ))
 
     def _on_delete_cut(self, cut_id: str) -> None:

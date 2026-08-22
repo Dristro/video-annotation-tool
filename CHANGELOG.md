@@ -5,6 +5,32 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added: optional justification/description field per cut (REQUIREMENT.md #13)
+
+- **Added**: `Cut.justification` -- a third, always-optional per-cut
+  input alongside the label and scores. Unlike scores, it's a single
+  plain free-text field, not a project-configurable set (no
+  enable/disable, no definitions list), and never required regardless of
+  project config. Shown in the inspector as a plain text field (below the
+  label row, above the scores form), pre-filled when selecting an
+  existing cut or starting a continuation from its front half, and
+  carried through Add/Edit Annotation, timeline drag-resize, and
+  undo/redo the same way label/scores already are. Shown truncated in the
+  cuts list and in full in the timeline hover tooltip.
+- 30 new tests (305 total).
+
+### Fixed: multi-key label shortcuts silently becoming unintended chords
+
+- **Fixed**: `QKeySequenceEdit` (used by the label editor's shortcut
+  field) accumulates up to 4 key presses into a multi-stroke chord by
+  default -- pressing Ctrl+G, then Ctrl+Shift+G to correct it, silently
+  produced "Ctrl+G, Ctrl+Shift+G" instead of replacing the recording,
+  with no visual indication anything but a single combo was recorded.
+  Reported as "multi-key shortcuts not working." New
+  `SingleStrokeKeySequenceEdit` (`ui/widgets.py`) clears before each
+  keystroke so a fresh press always replaces rather than extends.
+- 3 new tests (part of the 305 total above).
+
 ### Fixed: Mark Annotated / Add Annotation resetting the playing video to 0:00 and briefly stalling
 
 - **Fixed**: `PlaylistPanel.set_videos()` called `setCurrentRow()` to

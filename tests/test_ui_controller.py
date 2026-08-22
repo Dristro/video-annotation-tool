@@ -331,6 +331,95 @@ def test_break_continuation_leaves_link_when_declined(window, monkeypatch):
     assert updated.continues_forward is True
 
 
+def test_add_cut_includes_justification(window):
+    video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    window._current_video_path = video_path
+    window.inspector_panel.set_pending_in(1.0)
+    window.inspector_panel.set_pending_out(2.0)
+    window.inspector_panel._justification_input.setText("clean strike, top corner")
+
+    window._on_add_cut("goal")
+
+    entry = window.project.get_entry("a.mp4")
+    assert entry.cuts[0].justification == "clean strike, top corner"
+    # cleared after a successful add, like the rest of the pending state
+    assert window.inspector_panel.pending_justification() == ""
+
+
+def test_add_cut_without_justification_defaults_empty(window):
+    video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    window._current_video_path = video_path
+    window.inspector_panel.set_pending_in(1.0)
+    window.inspector_panel.set_pending_out(2.0)
+
+    window._on_add_cut("goal")
+
+    assert window.project.get_entry("a.mp4").cuts[0].justification == ""
+
+
+def test_edit_annotation_updates_justification(window):
+    window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal", justification="first draft")
+    window._refresh_cuts_and_status("a.mp4")
+    window.inspector_panel.select_cut_by_id(cut.id)
+
+    window.inspector_panel._justification_input.setText("revised reasoning")
+    window._on_edit_cut("goal")
+
+    assert window.project.get_entry("a.mp4").cuts[0].justification == "revised reasoning"
+
+
+def test_edit_annotation_without_touching_justification_keeps_it(window):
+    window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal", justification="keep me")
+    window._refresh_cuts_and_status("a.mp4")
+    window.inspector_panel.select_cut_by_id(cut.id)
+
+    window._on_edit_cut("foul")  # only changing the label
+
+    assert window.project.get_entry("a.mp4").cuts[0].justification == "keep me"
+
+
+def test_cut_resize_preserves_justification(window):
+    window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal", justification="keep me")
+    window._refresh_cuts_and_status("a.mp4")
+
+    window._on_cut_resized(cut.id, 5.0, 8.0)
+
+    assert window.project.get_entry("a.mp4").cuts[0].justification == "keep me"
+
+
+def test_undo_redo_edit_cut_justification(window):
+    window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal", justification="original")
+    window._refresh_cuts_and_status("a.mp4")
+    window.inspector_panel.select_cut_by_id(cut.id)
+    window.inspector_panel._justification_input.setText("updated")
+    window._on_edit_cut("goal")
+    assert window.project.get_entry("a.mp4").cuts[0].justification == "updated"
+
+    window._on_undo()
+    assert window.project.get_entry("a.mp4").cuts[0].justification == "original"
+
+    window._on_redo()
+    assert window.project.get_entry("a.mp4").cuts[0].justification == "updated"
+
+
+def test_undo_add_cut_with_justification_then_redo_restores_it(window):
+    video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    window._current_video_path = video_path
+    window.inspector_panel.set_pending_in(1.0)
+    window.inspector_panel.set_pending_out(2.0)
+    window.inspector_panel._justification_input.setText("why this cut matters")
+    window._on_add_cut("goal")
+    window._on_undo()
+
+    window._on_redo()
+
+    assert window.project.get_entry("a.mp4").cuts[0].justification == "why this cut matters"
+
+
 def test_cut_resized_updates_timing(window):
     window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal")

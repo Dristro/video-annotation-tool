@@ -17,19 +17,25 @@ redoing eager resolution.
 
 Also works around `ctypes.util.find_library('mpv')` returning None for
 Homebrew-installed libs that live outside the default dyld search paths.
+That part needs `DYLD_LIBRARY_PATH` set -- and setting it *must* be scoped
+to the `import mpv` that needs it, see `libmpv_discoverable()` below.
 """
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import ctypes.util
 import os
 
+DYLD_LIBRARY_PATH = "DYLD_LIBRARY_PATH"
+
 _bootstrapped = False
+_lib_dir: str | None = None
 
 
 def ensure_libmpv_loadable() -> None:
-    global _bootstrapped
+    global _bootstrapped, _lib_dir
     if _bootstrapped:
         return
     _bootstrapped = True
@@ -40,8 +46,48 @@ def ensure_libmpv_loadable() -> None:
     for lib_dir in ("/opt/homebrew/lib", "/usr/local/lib"):
         candidate = os.path.join(lib_dir, "libmpv.dylib")
         if os.path.exists(candidate):
-            os.environ["DYLD_LIBRARY_PATH"] = os.pathsep.join(
-                filter(None, [os.environ.get("DYLD_LIBRARY_PATH", ""), lib_dir])
-            )
             ctypes.CDLL(candidate, mode=os.RTLD_LAZY | os.RTLD_GLOBAL)
+            _lib_dir = lib_dir
             return
+
+
+@contextlib.contextmanager
+def libmpv_discoverable():
+    """Put the Homebrew lib dir on `DYLD_LIBRARY_PATH` for the duration of
+    the block, then put the variable back exactly as it was.
+
+    python-mpv's module body does `CDLL(ctypes.util.find_library('mpv'))`,
+    and `find_library` returns None for Homebrew libs unless that variable
+    points at them -- so `import mpv` genuinely needs it. But it must not
+    outlive the import, which is what this restores.
+
+    **Leaving `DYLD_LIBRARY_PATH` set process-wide silently breaks every
+    `ffmpeg`/`ffprobe` subprocess the app spawns**, which is not obvious
+    and cost a real debugging session to pin down. Child processes inherit
+    it, and any `DYLD_*` variable makes dyld drop its shared-cache /
+    prebuilt-loader fast path and bind far more eagerly -- which turns
+    ffmpeg's *own* unused, normally-never-resolved reference to the same
+    missing `_CGLGetCurrentContext` symbol (from `libavfilter`, which links
+    legacy OpenGL) into a hard `dyld` abort before `main()` runs. Exactly
+    the same OS/library interaction described above for libmpv, one level
+    down. Symptom, on this project's real 289-video library: **every**
+    thumbnail, waveform and duration probe failed instantly and silently
+    (all three are written to treat failure as "not available" rather than
+    an error), so no thumbnail was ever cached -- and because the playlist
+    re-queued every uncached video on each refresh, the app kept
+    re-launching a doomed extraction for all 289 of them on every single
+    "Mark Annotated" click. Verified directly: the same ffmpeg command
+    succeeds with the variable unset and aborts with it set.
+    """
+    if _lib_dir is None:
+        yield
+        return
+    previous = os.environ.get(DYLD_LIBRARY_PATH)
+    os.environ[DYLD_LIBRARY_PATH] = os.pathsep.join(filter(None, [previous or "", _lib_dir]))
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop(DYLD_LIBRARY_PATH, None)
+        else:
+            os.environ[DYLD_LIBRARY_PATH] = previous

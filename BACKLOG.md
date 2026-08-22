@@ -55,19 +55,47 @@ promise of order — just so nothing gets silently lost. Move items to
       rendering region" requirement is satisfied by mpv's own bounded
       demuxer readahead rather than explicit chunked loading logic in our
       code. Revisit if real-world stutter is observed on large files.
-- [ ] `refresh_playlist()`'s thumbnail generation (`media/thumbnails.py`)
-      runs synchronously on the main thread and is disk-cached after the
-      first call per video, but that *first* call (one `ffmpeg` subprocess
-      per video with no cached thumbnail) still blocks the UI -- fine for
-      a handful of videos, could visibly stall opening a project with many
-      uncached ones. Revisit (background thread, same pattern as
-      `Preloader`) if that's reported as sluggish. (Waveform generation
-      *is* already backgrounded -- `playback/waveform_loader.py` -- since
-      a full audio-track decode is slower than a single thumbnail frame
-      grab and was judged too risky to ever run on the main thread.)
+- [ ] Thumbnail generation is now fully off the main thread and bounded
+      (`ThumbnailLoader`: a 3-worker pool draining a queue, each video
+      looked at once per session -- see `CLAUDE.md`). Opening a 289-video
+      project takes ~12 s of *background* work to fill the cache the first
+      time, during which rows gain their thumbnails progressively. That's
+      acceptable but unprioritized: visible rows are extracted in playlist
+      order, not viewport order, so scrolling straight to the bottom of a
+      long list means waiting. Revisit (prioritize the visible range) only
+      if that's actually reported as annoying.
+- [ ] `ThumbnailLoader._seen` never expires, so a thumbnail that fails
+      once is not retried until the app restarts. Deliberate (retrying was
+      what caused the freeze), but it does mean a transient failure --
+      e.g. a video on a drive that was briefly unmounted -- leaves that row
+      iconless for the rest of the session.
+- [ ] Waveform generation is backgrounded per selected video
+      (`playback/waveform_loader.py`) and, now that ffmpeg subprocesses
+      actually run at all, genuinely produces peaks. It has never been
+      profiled on long videos -- a full audio-track decode is much slower
+      than a single frame grab, and unlike thumbnails there is no
+      concurrency bound (one thread per video selection, with late results
+      discarded by path check). Fine at current usage; revisit if rapid
+      playlist stepping is observed to pile up decodes.
 
 ## Verification gaps
 
+- [ ] The `DYLD_LIBRARY_PATH`-leak fix (see `CLAUDE.md`) was verified by
+      running `probe_duration()`, `get_or_create_thumbnail()` and
+      `get_or_create_waveform()` against the real project after importing
+      `vat.playback.mpv_player` -- all three now succeed where all three
+      previously failed. What has *not* been re-checked by the agent is
+      whether anything downstream had quietly adapted to those returning
+      nothing: in particular `TimelineWidget` now receives a real
+      `probe_duration()` value on video selection where it used to get
+      `None` and fall back to mpv's async `duration` observer. **Worth a
+      hands-on look at whether the timeline's total duration and waveform
+      strip now behave correctly on video switch.**
+- [ ] Both fixes for the "Mark Annotated freezes the app" report were
+      measured at the component level against the real 289-video project
+      (`refresh_playlist()`: ~1485 ms -> ~3 ms) rather than by clicking the
+      button in the running app -- the agent's shell has no WindowServer
+      session. **Please confirm the freeze is actually gone in normal use.**
 - [ ] A background-launched instance in the agent's own (non-interactive,
       no WindowServer session) test shell has now consistently
       self-terminated ~15-20s after launch with a clean exit (empty log, no

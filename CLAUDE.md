@@ -69,6 +69,35 @@ video was loaded. Fixed by re-asserting
 `MpvPlayer.__init__` (`src/vat/playback/mpv_player.py`), right before
 `mpv.MPV(...)` is constructed, rather than relying on import-time ordering.
 
+A third one, and the nastiest to diagnose because it fails *silently and
+somewhere else entirely*: **the `DYLD_LIBRARY_PATH` this workaround needs
+must never outlive the `import mpv` that needs it.** python-mpv's module
+body does `CDLL(ctypes.util.find_library('mpv'))`, and `find_library`
+returns `None` for Homebrew libs unless that variable points at them — so
+the import genuinely needs it set. But it used to be set process-wide and
+never restored, and **every `ffmpeg`/`ffprobe` subprocess the app spawns
+inherits it**. Any `DYLD_*` variable makes dyld drop its shared-cache /
+prebuilt-loader fast path and bind far more eagerly, which turns ffmpeg's
+*own* unused, normally-never-resolved reference to the very same missing
+`_CGLGetCurrentContext` symbol (from `libavfilter`, which links legacy
+OpenGL) into a hard `dyld` abort before `main()` runs. Same OS/library
+interaction as above, one level down. Verify it yourself in one line:
+`ffmpeg -version` works, `DYLD_LIBRARY_PATH=/opt/homebrew/lib ffmpeg
+-version` aborts.
+
+Consequence when this regressed: **thumbnails, waveforms and
+`probe_duration()` were all completely dead** and nothing said so — all
+three are deliberately best-effort and treat failure as "not available"
+rather than an error. The real 289-video project had `.thumbnails/`
+sitting empty after days of use, which in turn kept `refresh_playlist()`
+re-queueing 289 doomed extractions on every mutating action (the freeze
+described in CHANGELOG). Fixed by
+`_mpv_bootstrap.libmpv_discoverable()`, a context manager that sets the
+variable, and `mpv_player.py` doing `with libmpv_discoverable(): import
+mpv`. **If you add anything that shells out (ffmpeg, ffprobe, mpv CLI,
+anything), and it works from your terminal but not from the app, check
+`os.environ` for `DYLD_*` first.**
+
 A fourth one, more serious than the others: **never call a synchronous mpv
 property getter (`mpv_get_property`, e.g. python-mpv's `.time_pos` /
 `.duration` / `.pause` properties) from the Qt main thread on a recurring
@@ -404,26 +433,82 @@ If you add another always-must-work-regardless-of-focus keybinding, route
 it through `_on_navigate_requested()`'s direction-string pattern rather
 than inventing a new one-off mechanism.
 
-### SingleStrokeKeySequenceEdit: QKeySequenceEdit accumulates into chords by default
+### Label shortcuts: two-key sequences, and why they can't be plain QShortcuts
 
-`QKeySequenceEdit` records up to 4 key presses into a multi-stroke
-**chord** by default (e.g. "Ctrl+K, Ctrl+G", VSCode-style two-step
-shortcuts) -- it does not reset on a fresh press. Reproduced directly:
-pressing Ctrl+G, then pressing Ctrl+Shift+G to *correct* it, doesn't
-replace the recording -- it appends, silently producing "Ctrl+G,
-Ctrl+Shift+G" (now requiring both combos pressed in sequence), with zero
-visual indication anything but a plain single combo was recorded.
-Reported as a real bug: "multi-key shortcuts not working" -- users were
-accidentally creating unintended 2-stroke chords while adjusting a label
-shortcut, and a single press of either combo alone then appeared to do
-nothing. Label shortcuts (the only use of `QKeySequenceEdit` in this app)
-are plain "press this combo" bindings, never chords. Fixed in
-`ui/widgets.py`: `SingleStrokeKeySequenceEdit` calls `self.clear()` at the
-top of its own `keyPressEvent`, before `super()`, so every fresh key
-press replaces rather than extends. `_LabelFormDialog` uses it instead of
-plain `QKeySequenceEdit`. If you ever add another `QKeySequenceEdit`
-somewhere and *do* want real multi-stroke chord support, don't reuse this
-class -- it's specifically single-stroke-only by design.
+Two-key label shortcuts ("S, L" -- press S, then L) are a real, supported
+feature, and the project this tool was built for uses them heavily. Two
+separate real bugs live here; don't "simplify" either fix without
+re-reading both.
+
+**Recording them** (`ui/widgets.py`, `ui/label_editor_dialog.py`).
+`QKeySequenceEdit` records up to 4 presses into a multi-stroke sequence by
+default and does not reset on a fresh press -- pressing Ctrl+G, then
+Ctrl+Shift+G to *correct* it, appends rather than replaces, silently
+producing "Ctrl+G, Ctrl+Shift+G" with zero visual indication. Reported as
+a real bug. `SingleStrokeKeySequenceEdit` clears at the top of its own
+`keyPressEvent`, so one field can only ever hold one combo;
+`_LabelFormDialog` then uses **two** of them side by side ("Shortcut" and
+"Then (optional)"), so a second stroke is always deliberate and correcting
+either stroke can never lengthen the sequence. A live hint label
+(`describe_shortcut()`) spells out in words what will be saved. An earlier
+fix made chords impossible to enter at all -- that overcorrected, since
+chords were what the user wanted; keep both properties.
+
+**Dispatching them** (`ui/label_shortcuts.py`). **Qt's shortcut map always
+prefers an exact match over a partial one.** Registering both "S" and
+"S, L" as ordinary `QShortcut`s therefore makes "S, L" permanently
+unreachable: pressing S fires "S" immediately and the sequence never gets
+a chance to complete. Verified directly against Qt 6.11; the real label
+set hits it three times ("S" vs "S, L"/"S, R", "J" vs "J, R").
+`LabelShortcutManager` handles this:
+
+- A binding no other binding starts with gets an ordinary `QShortcut` and
+  fires instantly -- including multi-stroke ones like "R, E" whose first
+  stroke isn't itself a binding (Qt dispatches those natively, fine).
+- A binding that *is* the start of a longer one only opens a pending
+  window when it fires; the longer bindings are **not** registered with Qt
+  at all, and are reached solely by completing that window. Unrelated
+  keys, Esc, or `CHORD_TIMEOUT_MS` (500 ms) all commit the shorter one.
+- The pending window filters **`ShortcutOverride`, not `KeyPress`.** This
+  is the part that is easy to get wrong and cost a debugging round: Qt
+  consults its shortcut map *before* delivering a `KeyPress`, so a
+  KeyPress filter never sees a key the map already claimed. With the real
+  label set that broke "S, R" (R was swallowed as a partial match for the
+  unrelated "R, E") and dropped the pending "S" whenever the next key was
+  bound to anything. Accepting a `ShortcutOverride` makes Qt skip shortcut
+  handling for that key, which is the hook needed.
+- Letting the short binding's own `QShortcut` open the window -- rather
+  than filtering all key presses app-wide -- is what preserves "typing in
+  a text field never selects a label": `QLineEdit` claims plain printable
+  keys via `ShortcutOverride`, so "S" never fires while one has focus, so
+  no window opens and nothing is intercepted. Covered by
+  `tests/test_label_shortcuts.py`, which drives the real label set.
+
+### Thumbnail loading must be queued, bounded, and once-per-video
+
+`ThumbnailLoader` looks like it could just spawn a thread per video. It
+can't, and this has now caused the *same reported symptom* ("Mark
+Annotated" freezing with the spinning cursor) twice, for two different
+reasons:
+
+1. First version called `get_or_create_thumbnail()` inline on the main
+   thread. Obvious once found.
+2. Second version moved it to one fresh `threading.Thread` per uncached
+   video -- but `refresh_playlist()` runs on nearly every mutating action,
+   `Thread.start()` blocks until the new thread is actually running, and
+   each thread immediately forks an `ffmpeg`. Measured against the real
+   289-video project: **~1.5 s of main-thread blocking per click**, at
+   ~800% CPU. Worse, extraction was failing for unrelated reasons (see the
+   `DYLD_LIBRARY_PATH` landmine above), so no cache file was ever written
+   and the full storm repeated forever.
+
+So: a bounded pool (`MAX_WORKERS = 3`) drains a queue, and a `_seen` set
+keyed on `(video path, cache dir)` guarantees each video is looked at
+**once per session** -- successes, failures, and already-cached alike.
+Consequence to remember: the loader will not re-report a thumbnail after
+`PlaylistPanel.set_videos()` rebuilds the list and drops every row's icon,
+so `PlaylistPanel` caches the `QIcon`s it is given and re-applies them
+itself. If you change either side, check both.
 
 ### Playlist annotation counts need an explicit refresh trigger
 

@@ -5,6 +5,67 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed: every ffmpeg/ffprobe subprocess silently aborting (thumbnails, waveforms, durations)
+
+- **Fixed**: the libmpv bootstrap workaround set `DYLD_LIBRARY_PATH`
+  process-wide and never unset it. Every `ffmpeg`/`ffprobe` child process
+  inherited it, and any `DYLD_*` variable makes dyld bind eagerly instead
+  of using its shared-cache fast path — which turned ffmpeg's own unused,
+  normally-never-resolved reference to the missing
+  `_CGLGetCurrentContext` symbol (via `libavfilter`) into a hard abort
+  before `main()`. Every thumbnail, waveform and duration probe therefore
+  failed instantly, and since all three treat failure as "not available"
+  rather than an error, nothing surfaced. On the real 289-video project
+  this meant *zero* thumbnails had ever been cached. Fixed by scoping the
+  variable to the `import mpv` that actually needs it
+  (`_mpv_bootstrap.libmpv_discoverable()`), restoring it immediately
+  after. Verified: all 289 thumbnails now extract, waveforms render, and
+  `probe_duration()` returns real values.
+
+### Fixed: "Mark/Unmark Annotated" freezing the app with the spinning-wait cursor
+
+- **Fixed**: `ThumbnailLoader.load_missing()` started one fresh thread per
+  uncached video on every call, and `refresh_playlist()` calls it on
+  nearly every mutating action — Mark Annotated, add/edit/delete a cut,
+  undo/redo. `Thread.start()` blocks until the new thread is running and
+  each one immediately forks an `ffmpeg` process, so with 289 videos this
+  blocked the **main** thread for ~1.5 s per click at ~800% CPU. Combined
+  with the `DYLD_LIBRARY_PATH` bug above (no extraction ever succeeded, so
+  no cache file was ever written) it re-ran the full storm forever.
+  `ThumbnailLoader` now drains a queue with at most 3 worker threads and
+  never looks at the same video twice per session. Measured on the real
+  project: `refresh_playlist()` went from ~1485 ms to ~3 ms.
+- **Fixed**: `PlaylistPanel` now caches the thumbnail icons it's given and
+  re-applies them across `set_videos()` rebuilds, which clear every row's
+  icon — required now that the loader reports each thumbnail only once.
+  Also avoids re-decoding each JPEG from disk on every refresh.
+
+### Fixed: a label shortcut that starts another one made the longer one unreachable
+
+- **Fixed**: Qt's shortcut map always prefers an exact match over a
+  partial one, so registering both "S" and "S, L" as ordinary
+  `QShortcut`s made pressing S fire the "S" label immediately and left
+  "S, L" permanently unreachable. Reported as "if a shortcut (S) and (S+L)
+  exist, pressing S+L only selects the label with S". This project's own
+  label set hits it three times ("S" vs "S, L"/"S, R", "J" vs "J, R").
+  New `ui/label_shortcuts.py::LabelShortcutManager` registers only the
+  sequences Qt can dispatch unambiguously; a shortcut that starts a longer
+  one instead opens a brief pending window (500 ms) that the next key can
+  complete, hooking `ShortcutOverride` so it sees the key before Qt's
+  shortcut map claims it. Unrelated keys, Esc, or the timeout all commit
+  the shorter shortcut, and typing in a text field still never triggers a
+  label.
+- **Changed**: the label form now records a two-key sequence in its own
+  second field ("Then (optional)") rather than by pressing two keys into
+  one field, and shows a live plain-English description of what will be
+  saved ("Two-key sequence: press S, then L — one after the other, not
+  together"). This keeps the previous fix's property that correcting a
+  shortcut can never silently lengthen it, while making deliberate two-key
+  sequences enterable again. Saving one that starts another shortcut now
+  explains the small delay instead of leaving it to be noticed as
+  sluggishness.
+- 34 new tests (339 total).
+
 ### Added: optional justification/description field per cut (REQUIREMENT.md #13)
 
 - **Added**: `Cut.justification` -- a third, always-optional per-cut

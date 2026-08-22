@@ -46,7 +46,7 @@ class PlaylistPanel(QWidget):
     ) -> None:
         cut_counts = cut_counts or {}
         thumbnails = thumbnails or {}
-        current_path = self.current_path()
+        previous_path = self.current_path()
         self._list.blockSignals(True)
         self._list.clear()
         self._paths_by_row = []
@@ -65,13 +65,30 @@ class PlaylistPanel(QWidget):
             self._list.addItem(item)
             self._paths_by_row.append(video.path)
             self._rel_paths_by_row.append(video.rel_path)
-            if video.path == current_path:
+            if video.path == previous_path:
                 restore_row = len(self._paths_by_row) - 1
-        self._list.blockSignals(False)
+        # setCurrentRow() while still inside the block -- clear() resets
+        # the widget's current row to -1, so calling it *after*
+        # blockSignals(False) fired currentRowChanged (a real transition
+        # from -1) on every single set_videos() call, even when the
+        # "restored" row is the exact video that was already selected.
+        # MainWindow's video_selected handler reloads the video
+        # unconditionally, so this was resetting playback to 0 and
+        # briefly stalling on ffprobe/mpv reopening the file every time
+        # refresh_playlist() ran -- which fires on nearly every mutating
+        # action (Mark Annotated, Add Annotation, ...), not just on
+        # project open or an actual video switch. Reported as a real bug.
         if restore_row >= 0:
             self._list.setCurrentRow(restore_row)
         elif self._paths_by_row:
             self._list.setCurrentRow(0)
+        self._list.blockSignals(False)
+        # Only notify if the selection actually changed (a different video
+        # is current now than before this refresh, e.g. first-ever
+        # population, or the previously-selected video no longer exists).
+        new_path = self.current_path()
+        if new_path is not None and new_path != previous_path:
+            self.video_selected.emit(new_path)
 
     def set_thumbnail(self, rel_path: str, thumbnail_path: str) -> None:
         """Set a single row's icon in place, without rebuilding the list --

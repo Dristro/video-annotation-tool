@@ -102,6 +102,39 @@ def test_mark_annotated_via_controller_updates_playlist(window):
     assert window.project.is_annotated("a.mp4") is True
 
 
+def test_mark_annotated_does_not_reload_currently_selected_video(window):
+    # Regression test: refresh_playlist() (called by _on_set_annotated)
+    # used to always re-fire video_selected for whatever video was already
+    # selected, via PlaylistPanel.set_videos() re-triggering
+    # currentRowChanged on every call -- reloading the video from scratch
+    # (resetting playback to 0) and briefly stalling every time. Reported
+    # as a real bug.
+    open(os.path.join(window.project.config.videos_dir, "a.mp4"), "wb").close()
+    load_calls = []
+    window.video_panel.load = lambda path: load_calls.append(path)
+
+    window.refresh_playlist()  # initial population: auto-selects + loads a.mp4
+    assert len(load_calls) == 1
+
+    window._on_set_annotated(True)
+
+    assert len(load_calls) == 1  # not reloaded
+
+
+def test_add_cut_does_not_reload_currently_selected_video(window):
+    open(os.path.join(window.project.config.videos_dir, "a.mp4"), "wb").close()
+    load_calls = []
+    window.video_panel.load = lambda path: load_calls.append(path)
+    window.refresh_playlist()
+    assert len(load_calls) == 1
+
+    window.inspector_panel.set_pending_in(1.0)
+    window.inspector_panel.set_pending_out(2.0)
+    window._on_add_cut("goal")
+
+    assert len(load_calls) == 1  # not reloaded
+
+
 def test_label_shortcut_registered(window):
     shortcuts = [s.key().toString() for s in window._label_shortcuts]
     assert "G" in shortcuts

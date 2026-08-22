@@ -5,6 +5,27 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed: Mark Annotated / Add Annotation resetting the playing video to 0:00 and briefly stalling
+
+- **Fixed**: `PlaylistPanel.set_videos()` called `setCurrentRow()` to
+  restore the current selection *after* `blockSignals(False)` — but
+  `clear()` (called earlier in the same method, to rebuild the list) resets
+  the widget's current row to -1 first, so "restoring" the very same row
+  was still a real (-1 → N) transition and fired `currentRowChanged` every
+  single time, even when nothing about the selection actually changed.
+  `MainWindow`'s handler for that signal (`_on_video_selected`) reloads the
+  video unconditionally, so this reset playback to 0:00 and briefly
+  stalled (`probe_duration()`'s `ffprobe` call, plus mpv reopening the
+  file) on *every* `refresh_playlist()` call — which fires on nearly every
+  mutating action (Mark Annotated, Add Annotation, edit/delete a cut, …),
+  not just an actual video switch. Reported as a real bug, and the direct
+  cause of the residual "brief freeze" left after the thumbnail-extraction
+  fix above. `set_videos()` now restores the selection *before* unblocking
+  signals, and only emits `video_selected` itself if the selected video
+  actually changed (first-ever population, or the previously-selected
+  video no longer being in the list).
+- 5 new tests (277 total).
+
 ### Added: light/dark theme toggle, saved as a global preference
 
 - **Added**: View > Theme now offers Dark/Light as a real user choice

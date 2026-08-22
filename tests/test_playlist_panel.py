@@ -36,6 +36,50 @@ def test_annotation_count_omitted_when_missing(qapp):
     assert "(" not in panel._list.item(0).text()
 
 
+def test_set_videos_emits_selected_on_first_population(qapp):
+    panel = PlaylistPanel()
+    selections = []
+    panel.video_selected.connect(selections.append)
+
+    panel.set_videos(_videos("a.mp4", "b.mp4"), {})
+
+    assert selections == ["/videos/a.mp4"]  # row 0 auto-selected
+
+
+def test_set_videos_does_not_reemit_when_selection_is_unchanged(qapp):
+    # Regression test: refreshing the list (e.g. after Mark Annotated or
+    # Add Annotation, which both call refresh_playlist()) with the same
+    # video still selected used to re-fire video_selected every time,
+    # because setCurrentRow() was called after blockSignals(False) --
+    # clear() resets the widget's current row to -1, so "restoring" the
+    # same row was still a real (-1 -> N) transition that fired the
+    # signal. MainWindow's handler reloads the video unconditionally, so
+    # this reset playback to 0 and briefly stalled on every refresh.
+    panel = PlaylistPanel()
+    panel.set_videos(_videos("a.mp4", "b.mp4"), {})
+    panel.select_relative(1)  # now on b.mp4
+    selections = []
+    panel.video_selected.connect(selections.append)
+
+    # Same videos, same selection (b.mp4) -- e.g. an annotation count changed.
+    panel.set_videos(_videos("a.mp4", "b.mp4"), {}, {"b.mp4": 1})
+
+    assert selections == []
+    assert panel.current_path() == "/videos/b.mp4"
+
+
+def test_set_videos_emits_when_previously_selected_video_disappears(qapp):
+    panel = PlaylistPanel()
+    panel.set_videos(_videos("a.mp4", "b.mp4"), {})
+    panel.select_relative(1)  # now on b.mp4
+    selections = []
+    panel.video_selected.connect(selections.append)
+
+    panel.set_videos(_videos("a.mp4"), {})  # b.mp4 no longer exists
+
+    assert selections == ["/videos/a.mp4"]
+
+
 def test_thumbnail_icon_set_when_provided(qapp, tmp_path):
     thumb_path = tmp_path / "thumb.jpg"
     QPixmap(4, 4).save(str(thumb_path), "JPG")

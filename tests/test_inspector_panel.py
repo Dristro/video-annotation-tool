@@ -1,3 +1,6 @@
+from vat.ui.inspector_panel import InspectorPanel
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QCoreApplication
 import pytest
 
 pytest.importorskip("PySide6")
@@ -11,33 +14,33 @@ from vat.ui.inspector_panel import InspectorPanel  # noqa: E402
 
 
 @pytest.fixture(scope="module")
-def qapp():
+def qapp() -> QApplication | QCoreApplication:
     return QApplication.instance() or QApplication([])
 
 
 @pytest.fixture
-def panel(qapp):
+def panel(qapp) -> InspectorPanel:
     p = InspectorPanel()
     p.set_labels([Label(name="goal", shortcut="g")])
     return p
 
 
-def test_pending_justification_defaults_empty(panel):
+def test_pending_justification_defaults_empty(panel) -> None:
     assert panel.pending_justification() == ""
 
 
-def test_pending_justification_returns_stripped_text(panel):
+def test_pending_justification_returns_stripped_text(panel) -> None:
     panel._justification_input.setText("  clear foul, hand ball  ")
     assert panel.pending_justification() == "clear foul, hand ball"
 
 
-def test_clear_pending_clears_justification(panel):
+def test_clear_pending_clears_justification(panel) -> None:
     panel._justification_input.setText("some notes")
     panel.clear_pending()
     assert panel.pending_justification() == ""
 
 
-def test_selecting_a_cut_prefills_justification(panel):
+def test_selecting_a_cut_prefills_justification(panel) -> None:
     cut = Cut(start=1.0, end=2.0, label="goal", justification="clean strike, top corner")
     panel.set_cuts([cut], [], False)
 
@@ -46,7 +49,7 @@ def test_selecting_a_cut_prefills_justification(panel):
     assert panel.pending_justification() == "clean strike, top corner"
 
 
-def test_selecting_a_cut_without_justification_blanks_field(panel):
+def test_selecting_a_cut_without_justification_blanks_field(panel) -> None:
     panel._justification_input.setText("stale text from a previous selection")
     cut = Cut(start=1.0, end=2.0, label="goal")
     panel.set_cuts([cut], [], False)
@@ -56,7 +59,7 @@ def test_selecting_a_cut_without_justification_blanks_field(panel):
     assert panel.pending_justification() == ""
 
 
-def test_start_here_prefills_justification_from_front_half(panel):
+def test_start_here_prefills_justification_from_front_half(panel) -> None:
     cut = Cut(
         start=280.0, end=300.0, label="goal", justification="ends here",
         continuation_id="link1", continues_forward=True,
@@ -68,14 +71,14 @@ def test_start_here_prefills_justification_from_front_half(panel):
     assert panel.pending_justification() == "ends here"
 
 
-def test_set_cuts_shows_truncated_justification_in_list(panel):
+def test_set_cuts_shows_truncated_justification_in_list(panel) -> None:
     cut = Cut(start=1.0, end=2.0, label="goal", justification="clean strike, top corner")
     panel.set_cuts([cut], [], False)
 
     assert "clean strike, top corner" in panel._cuts_list.item(0).text()
 
 
-def test_set_cuts_truncates_long_justification(panel):
+def test_set_cuts_truncates_long_justification(panel) -> None:
     long_text = "x" * 100
     cut = Cut(start=1.0, end=2.0, label="goal", justification=long_text)
     panel.set_cuts([cut], [], False)
@@ -86,14 +89,14 @@ def test_set_cuts_truncates_long_justification(panel):
     assert "…" in text
 
 
-def test_set_cuts_omits_justification_marker_when_absent(panel):
+def test_set_cuts_omits_justification_marker_when_absent(panel) -> None:
     cut = Cut(start=1.0, end=2.0, label="goal")
     panel.set_cuts([cut], [], False)
 
     assert '"' not in panel._cuts_list.item(0).text()
 
 
-def test_continues_checkbox_relaxes_mark_out_requirement(panel):
+def test_continues_checkbox_relaxes_mark_out_requirement(panel) -> None:
     panel.set_pending_in(10.0)
     assert panel._add_cut_btn.isEnabled() is False  # no Mark Out yet
 
@@ -104,19 +107,19 @@ def test_continues_checkbox_relaxes_mark_out_requirement(panel):
     assert panel._add_cut_btn.isEnabled() is False  # back to requiring both
 
 
-def test_continues_checkbox_still_requires_mark_in(panel):
+def test_continues_checkbox_still_requires_mark_in(panel) -> None:
     panel._continues_checkbox.setChecked(True)
     assert panel._add_cut_btn.isEnabled() is False  # no Mark In at all
 
 
-def test_set_continuation_allowed_false_disables_and_unchecks(panel):
+def test_set_continuation_allowed_false_disables_and_unchecks(panel) -> None:
     panel._continues_checkbox.setChecked(True)
     panel.set_continuation_allowed(False)
     assert panel._continues_checkbox.isEnabled() is False
     assert panel._continues_checkbox.isChecked() is False
 
 
-def test_pending_continuation_banner_shows_and_hides(panel):
+def test_pending_continuation_banner_shows_and_hides(panel) -> None:
     cut = Cut(start=280.0, end=300.0, label="goal", continuation_id="link1", continues_forward=True)
 
     panel.set_pending_continuation(cut)
@@ -126,7 +129,7 @@ def test_pending_continuation_banner_shows_and_hides(panel):
     assert panel._continuation_banner_label.text() == "" or panel._pending_continuation_cut is None
 
 
-def test_set_pending_continuations_single_hides_next_button(panel):
+def test_set_pending_continuations_single_hides_next_button(panel) -> None:
     cut = Cut(start=280.0, end=300.0, label="goal", continuation_id="link1", continues_forward=True)
     panel.set_pending_continuations([cut])
 
@@ -135,7 +138,7 @@ def test_set_pending_continuations_single_hides_next_button(panel):
     assert "(" not in panel._continuation_banner_label.text()  # no "(1/2)"-style count for a single one
 
 
-def test_set_pending_continuations_multiple_shows_next_button_and_count(panel):
+def test_set_pending_continuations_multiple_shows_next_button_and_count(panel) -> None:
     a = Cut(start=100.0, end=110.0, label="goal", continuation_id="link1", continues_forward=True)
     b = Cut(start=200.0, end=210.0, label="foul", continuation_id="link2", continues_forward=True)
     panel.set_pending_continuations([a, b])
@@ -145,7 +148,7 @@ def test_set_pending_continuations_multiple_shows_next_button_and_count(panel):
     assert "(1/2)" in panel._continuation_banner_label.text()
 
 
-def test_next_continuation_cycles_and_wraps(panel):
+def test_next_continuation_cycles_and_wraps(panel) -> None:
     a = Cut(start=100.0, end=110.0, label="goal", continuation_id="link1", continues_forward=True)
     b = Cut(start=200.0, end=210.0, label="foul", continuation_id="link2", continues_forward=True)
     panel.set_pending_continuations([a, b])
@@ -159,7 +162,7 @@ def test_next_continuation_cycles_and_wraps(panel):
     assert "(1/2)" in panel._continuation_banner_label.text()
 
 
-def test_start_here_acts_on_whichever_continuation_is_currently_shown(panel):
+def test_start_here_acts_on_whichever_continuation_is_currently_shown(panel) -> None:
     a = Cut(start=100.0, end=110.0, label="goal", continuation_id="link1", continues_forward=True)
     b = Cut(start=200.0, end=210.0, label="foul", continuation_id="link2", continues_forward=True)
     panel.set_labels([Label(name="goal", shortcut="g"), Label(name="foul", shortcut="f")])
@@ -172,7 +175,7 @@ def test_start_here_acts_on_whichever_continuation_is_currently_shown(panel):
     assert panel.completing_continuation_id() == "link2"
 
 
-def test_start_here_prefills_label_scores_and_mark_in(panel):
+def test_start_here_prefills_label_scores_and_mark_in(panel) -> None:
     panel.set_score_definitions(True, [ScoreDefinition(name="Technique", minimum=0, maximum=100)])
     panel.set_labels([Label(name="goal", shortcut="g")])
     cut = Cut(
@@ -190,7 +193,7 @@ def test_start_here_prefills_label_scores_and_mark_in(panel):
     assert panel.completing_continuation_id() == "link1"
 
 
-def test_selecting_an_existing_cut_clears_continuation_completion_state(panel):
+def test_selecting_an_existing_cut_clears_continuation_completion_state(panel) -> None:
     front_half = Cut(start=280.0, end=300.0, label="goal", continuation_id="link1", continues_forward=True)
     panel.set_pending_continuation(front_half)
     panel._on_start_continuation()
@@ -204,7 +207,7 @@ def test_selecting_an_existing_cut_clears_continuation_completion_state(panel):
     assert panel._continues_checkbox.isChecked() is False
 
 
-def test_edit_enabled_when_mark_in_out_untouched(panel):
+def test_edit_enabled_when_mark_in_out_untouched(panel) -> None:
     cut = Cut(start=1.0, end=2.0, label="goal")
     panel.set_cuts([cut], [], False)
     panel.select_cut_by_id(cut.id)
@@ -213,7 +216,7 @@ def test_edit_enabled_when_mark_in_out_untouched(panel):
     assert panel.pending_retime() is None
 
 
-def test_edit_disabled_when_only_mark_in_set(panel):
+def test_edit_disabled_when_only_mark_in_set(panel) -> None:
     cut = Cut(start=1.0, end=2.0, label="goal")
     panel.set_cuts([cut], [], False)
     panel.select_cut_by_id(cut.id)
@@ -223,7 +226,7 @@ def test_edit_disabled_when_only_mark_in_set(panel):
     assert panel._edit_cut_btn.isEnabled() is False
 
 
-def test_edit_enabled_with_valid_retime_range(panel):
+def test_edit_enabled_with_valid_retime_range(panel) -> None:
     cut = Cut(start=1.0, end=2.0, label="goal")
     panel.set_cuts([cut], [], False)
     panel.select_cut_by_id(cut.id)
@@ -235,7 +238,7 @@ def test_edit_enabled_with_valid_retime_range(panel):
     assert panel.pending_retime() == (5.0, 10.0)
 
 
-def test_edit_disabled_when_retime_out_before_in(panel):
+def test_edit_disabled_when_retime_out_before_in(panel) -> None:
     cut = Cut(start=1.0, end=2.0, label="goal")
     panel.set_cuts([cut], [], False)
     panel.select_cut_by_id(cut.id)
@@ -246,7 +249,7 @@ def test_edit_disabled_when_retime_out_before_in(panel):
     assert panel._edit_cut_btn.isEnabled() is False
 
 
-def test_delete_cut_asks_for_confirmation_and_emits_when_confirmed(panel, monkeypatch):
+def test_delete_cut_asks_for_confirmation_and_emits_when_confirmed(panel, monkeypatch) -> None:
     cut = Cut(start=1.0, end=2.0, label="goal")
     panel.set_cuts([cut], [], False)
     panel.select_cut_by_id(cut.id)
@@ -260,7 +263,7 @@ def test_delete_cut_asks_for_confirmation_and_emits_when_confirmed(panel, monkey
     assert emitted == [cut.id]
 
 
-def test_delete_cut_does_not_emit_when_confirmation_declined(panel, monkeypatch):
+def test_delete_cut_does_not_emit_when_confirmation_declined(panel, monkeypatch) -> None:
     cut = Cut(start=1.0, end=2.0, label="goal")
     panel.set_cuts([cut], [], False)
     panel.select_cut_by_id(cut.id)
@@ -274,7 +277,7 @@ def test_delete_cut_does_not_emit_when_confirmation_declined(panel, monkeypatch)
     assert emitted == []
 
 
-def test_break_continuation_button_visible_only_for_linked_cuts(panel):
+def test_break_continuation_button_visible_only_for_linked_cuts(panel) -> None:
     # isVisible() is always False in these headless tests regardless of
     # setVisible() (the top-level window is never shown) -- isHidden()
     # reflects the explicit setVisible() call on this widget itself,
@@ -290,7 +293,7 @@ def test_break_continuation_button_visible_only_for_linked_cuts(panel):
     assert panel._break_continuation_btn.isHidden() is True
 
 
-def test_break_continuation_emits_selected_cut_id(panel):
+def test_break_continuation_emits_selected_cut_id(panel) -> None:
     linked = Cut(start=1.0, end=2.0, label="goal", continuation_id="link1", continues_forward=True)
     panel.set_cuts([linked], [], False)
     panel.select_cut_by_id(linked.id)
@@ -302,7 +305,7 @@ def test_break_continuation_emits_selected_cut_id(panel):
     assert emitted == [linked.id]
 
 
-def test_set_cuts_shows_continuation_markers(panel):
+def test_set_cuts_shows_continuation_markers(panel) -> None:
     front_half = Cut(start=280.0, end=300.0, label="goal", continuation_id="link1", continues_forward=True)
     back_half = Cut(start=0.0, end=60.0, label="goal", continuation_id="link1", continues_forward=False)
     ordinary = Cut(start=100.0, end=110.0, label="goal")

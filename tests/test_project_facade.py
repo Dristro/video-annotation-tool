@@ -1,13 +1,13 @@
 from vat.project.project import Project
 
 
-def _make_project(tmp_project_dir, tmp_videos_dir):
+def _make_project(tmp_project_dir, tmp_videos_dir) -> Project:
     project = Project.create(tmp_project_dir, tmp_videos_dir)
     project.add_label("goal", "g")
     return project
 
 
-def test_full_annotation_lifecycle(tmp_project_dir, tmp_videos_dir):
+def test_full_annotation_lifecycle(tmp_project_dir, tmp_videos_dir) -> None:
     project = _make_project(tmp_project_dir, tmp_videos_dir)
     videos = project.list_videos()
     assert [v.rel_path for v in videos] == ["a.mp4", "b.mp4"]
@@ -22,7 +22,7 @@ def test_full_annotation_lifecycle(tmp_project_dir, tmp_videos_dir):
     assert project.is_annotated(rel) is True
 
 
-def test_pending_continuations_returns_all_uncompleted_ones(tmp_project_dir, tmp_videos_dir):
+def test_pending_continuations_returns_all_uncompleted_ones(tmp_project_dir, tmp_videos_dir) -> None:
     project = _make_project(tmp_project_dir, tmp_videos_dir)
     project.add_cut("a.mp4", 100.0, 110.0, "goal", continuation_id="link1", continues_forward=True)
     project.add_cut("a.mp4", 200.0, 210.0, "foul", continuation_id="link2", continues_forward=True)
@@ -32,7 +32,7 @@ def test_pending_continuations_returns_all_uncompleted_ones(tmp_project_dir, tmp
     assert {c.continuation_id for c in pending} == {"link1", "link2"}
 
 
-def test_pending_continuations_excludes_completed_ones(tmp_project_dir, tmp_videos_dir):
+def test_pending_continuations_excludes_completed_ones(tmp_project_dir, tmp_videos_dir) -> None:
     project = _make_project(tmp_project_dir, tmp_videos_dir)
     project.add_cut("a.mp4", 100.0, 110.0, "goal", continuation_id="link1", continues_forward=True)
     project.add_cut("a.mp4", 200.0, 210.0, "foul", continuation_id="link2", continues_forward=True)
@@ -43,7 +43,7 @@ def test_pending_continuations_excludes_completed_ones(tmp_project_dir, tmp_vide
     assert [c.continuation_id for c in pending] == ["link2"]
 
 
-def test_pending_continuation_returns_first_of_several(tmp_project_dir, tmp_videos_dir):
+def test_pending_continuation_returns_first_of_several(tmp_project_dir, tmp_videos_dir) -> None:
     project = _make_project(tmp_project_dir, tmp_videos_dir)
     project.add_cut("a.mp4", 100.0, 110.0, "goal", continuation_id="link1", continues_forward=True)
     project.add_cut("a.mp4", 200.0, 210.0, "foul", continuation_id="link2", continues_forward=True)
@@ -51,7 +51,7 @@ def test_pending_continuation_returns_first_of_several(tmp_project_dir, tmp_vide
     assert project.pending_continuation("b.mp4", "a.mp4").continuation_id == "link1"
 
 
-def test_overlapping_cuts_detects_overlap(tmp_project_dir, tmp_videos_dir):
+def test_overlapping_cuts_detects_overlap(tmp_project_dir, tmp_videos_dir) -> None:
     project = _make_project(tmp_project_dir, tmp_videos_dir)
     rel = project.rel_path(project.list_videos()[0].path)
     project.add_cut(rel, 10.0, 20.0, "goal")
@@ -61,7 +61,7 @@ def test_overlapping_cuts_detects_overlap(tmp_project_dir, tmp_videos_dir):
     assert project.overlapping_cuts(rel, 0.0, 10.0) == []  # touching, not overlapping
 
 
-def test_overlapping_cuts_excludes_given_cut_id(tmp_project_dir, tmp_videos_dir):
+def test_overlapping_cuts_excludes_given_cut_id(tmp_project_dir, tmp_videos_dir) -> None:
     project = _make_project(tmp_project_dir, tmp_videos_dir)
     rel = project.rel_path(project.list_videos()[0].path)
     cut = project.add_cut(rel, 10.0, 20.0, "goal")
@@ -70,14 +70,14 @@ def test_overlapping_cuts_excludes_given_cut_id(tmp_project_dir, tmp_videos_dir)
     assert project.overlapping_cuts(rel, 10.0, 20.0, exclude_cut_id=cut.id) == []
 
 
-def test_overlapping_cuts_no_entry_returns_empty(tmp_project_dir, tmp_videos_dir):
+def test_overlapping_cuts_no_entry_returns_empty(tmp_project_dir, tmp_videos_dir) -> None:
     project = _make_project(tmp_project_dir, tmp_videos_dir)
     rel = project.rel_path(project.list_videos()[0].path)
 
     assert project.overlapping_cuts(rel, 0.0, 5.0) == []
 
 
-def test_rename_label_propagates_to_annotation_file(tmp_project_dir, tmp_videos_dir):
+def test_rename_label_propagates_to_annotation_file(tmp_project_dir, tmp_videos_dir) -> None:
     project = _make_project(tmp_project_dir, tmp_videos_dir)
     videos = project.list_videos()
     rel = project.rel_path(videos[0].path)
@@ -90,7 +90,7 @@ def test_rename_label_propagates_to_annotation_file(tmp_project_dir, tmp_videos_
     assert project.config.find_label("goal") is None
 
 
-def test_move_project_dir_keeps_annotations_readable(tmp_project_dir, tmp_videos_dir, tmp_path):
+def test_move_project_dir_keeps_annotations_readable(tmp_project_dir, tmp_videos_dir, tmp_path) -> None:
     project = _make_project(tmp_project_dir, tmp_videos_dir)
     videos = project.list_videos()
     rel = project.rel_path(videos[0].path)
@@ -103,7 +103,7 @@ def test_move_project_dir_keeps_annotations_readable(tmp_project_dir, tmp_videos
     assert project.get_entry(rel).cuts[0].label == "goal"
 
 
-def test_change_videos_dir_updates_playlist(tmp_project_dir, tmp_videos_dir, tmp_path):
+def test_change_videos_dir_updates_playlist(tmp_project_dir, tmp_videos_dir, tmp_path) -> None:
     project = _make_project(tmp_project_dir, tmp_videos_dir)
     other_dir = tmp_path / "other_videos"
     other_dir.mkdir()
@@ -114,7 +114,7 @@ def test_change_videos_dir_updates_playlist(tmp_project_dir, tmp_videos_dir, tmp
     assert [v.rel_path for v in project.list_videos()] == ["only.mp4"]
 
 
-def test_add_cut_with_scores(tmp_project_dir, tmp_videos_dir):
+def test_add_cut_with_scores(tmp_project_dir, tmp_videos_dir) -> None:
     project = _make_project(tmp_project_dir, tmp_videos_dir)
     project.set_scoring_enabled(True)
     project.add_score_definition("Technique", 0, 100, "float")
@@ -127,7 +127,7 @@ def test_add_cut_with_scores(tmp_project_dir, tmp_videos_dir):
     assert project.missing_scores(cut) == []
 
 
-def test_is_cut_complete_when_scoring_disabled(tmp_project_dir, tmp_videos_dir):
+def test_is_cut_complete_when_scoring_disabled(tmp_project_dir, tmp_videos_dir) -> None:
     project = _make_project(tmp_project_dir, tmp_videos_dir)
     rel = project.rel_path(project.list_videos()[0].path)
     cut = project.add_cut(rel, 1.0, 2.0, "goal")
@@ -135,7 +135,7 @@ def test_is_cut_complete_when_scoring_disabled(tmp_project_dir, tmp_videos_dir):
     assert project.is_cut_complete(cut) is True
 
 
-def test_cut_flagged_incomplete_when_score_added_after_the_fact(tmp_project_dir, tmp_videos_dir):
+def test_cut_flagged_incomplete_when_score_added_after_the_fact(tmp_project_dir, tmp_videos_dir) -> None:
     project = _make_project(tmp_project_dir, tmp_videos_dir)
     project.set_scoring_enabled(True)
     project.add_score_definition("Technique", 0, 100, "float")
@@ -152,7 +152,7 @@ def test_cut_flagged_incomplete_when_score_added_after_the_fact(tmp_project_dir,
     assert project.missing_scores(cut) == ["Confidence"]
 
 
-def test_rename_score_definition_propagates_to_annotation_file(tmp_project_dir, tmp_videos_dir):
+def test_rename_score_definition_propagates_to_annotation_file(tmp_project_dir, tmp_videos_dir) -> None:
     project = _make_project(tmp_project_dir, tmp_videos_dir)
     project.set_scoring_enabled(True)
     project.add_score_definition("Technique", 0, 100, "float")
@@ -166,17 +166,17 @@ def test_rename_score_definition_propagates_to_annotation_file(tmp_project_dir, 
     assert project.config.find_score_definition("Technique") is None
 
 
-def test_pending_continuation_none_without_previous_video(tmp_project_dir, tmp_videos_dir):
+def test_pending_continuation_none_without_previous_video(tmp_project_dir, tmp_videos_dir) -> None:
     project = _make_project(tmp_project_dir, tmp_videos_dir)
     assert project.pending_continuation("a.mp4", None) is None
 
 
-def test_pending_continuation_none_when_previous_video_has_no_cuts(tmp_project_dir, tmp_videos_dir):
+def test_pending_continuation_none_when_previous_video_has_no_cuts(tmp_project_dir, tmp_videos_dir) -> None:
     project = _make_project(tmp_project_dir, tmp_videos_dir)
     assert project.pending_continuation("b.mp4", "a.mp4") is None
 
 
-def test_pending_continuation_found_when_previous_cut_continues_forward(tmp_project_dir, tmp_videos_dir):
+def test_pending_continuation_found_when_previous_cut_continues_forward(tmp_project_dir, tmp_videos_dir) -> None:
     project = _make_project(tmp_project_dir, tmp_videos_dir)
     front_half = project.add_cut(
         "a.mp4", 280.0, 300.0, "goal", continuation_id="link1", continues_forward=True
@@ -188,14 +188,14 @@ def test_pending_continuation_found_when_previous_cut_continues_forward(tmp_proj
     assert pending.id == front_half.id
 
 
-def test_pending_continuation_not_found_for_ordinary_cut(tmp_project_dir, tmp_videos_dir):
+def test_pending_continuation_not_found_for_ordinary_cut(tmp_project_dir, tmp_videos_dir) -> None:
     project = _make_project(tmp_project_dir, tmp_videos_dir)
     project.add_cut("a.mp4", 1.0, 2.0, "goal")  # continues_forward=False by default
 
     assert project.pending_continuation("b.mp4", "a.mp4") is None
 
 
-def test_pending_continuation_none_once_completed(tmp_project_dir, tmp_videos_dir):
+def test_pending_continuation_none_once_completed(tmp_project_dir, tmp_videos_dir) -> None:
     project = _make_project(tmp_project_dir, tmp_videos_dir)
     project.add_cut("a.mp4", 280.0, 300.0, "goal", continuation_id="link1", continues_forward=True)
     # b.mp4 completes it with a matching continuation_id.
@@ -204,7 +204,7 @@ def test_pending_continuation_none_once_completed(tmp_project_dir, tmp_videos_di
     assert project.pending_continuation("b.mp4", "a.mp4") is None
 
 
-def test_pending_continuation_chain_across_three_videos(tmp_project_dir, tmp_videos_dir):
+def test_pending_continuation_chain_across_three_videos(tmp_project_dir, tmp_videos_dir) -> None:
     # A single shared continuation_id propagated through a middle video's
     # cut (both completing the link from A and continuing it into C) must
     # still correctly link each adjacent pair.

@@ -6,7 +6,7 @@ from vat.playback import _mpv_bootstrap
 from vat.playback._mpv_bootstrap import DYLD_LIBRARY_PATH, libmpv_discoverable
 
 
-def test_dyld_path_is_set_inside_the_block_and_removed_after(monkeypatch):
+def test_dyld_path_is_set_inside_the_block_and_removed_after(monkeypatch) -> None:
     monkeypatch.setattr(_mpv_bootstrap, "_lib_dir", "/opt/homebrew/lib")
     monkeypatch.delenv(DYLD_LIBRARY_PATH, raising=False)
 
@@ -16,7 +16,7 @@ def test_dyld_path_is_set_inside_the_block_and_removed_after(monkeypatch):
     assert DYLD_LIBRARY_PATH not in os.environ
 
 
-def test_a_pre_existing_dyld_path_is_restored_exactly(monkeypatch):
+def test_a_pre_existing_dyld_path_is_restored_exactly(monkeypatch) -> None:
     monkeypatch.setattr(_mpv_bootstrap, "_lib_dir", "/opt/homebrew/lib")
     monkeypatch.setenv(DYLD_LIBRARY_PATH, "/somewhere/else")
 
@@ -27,7 +27,7 @@ def test_a_pre_existing_dyld_path_is_restored_exactly(monkeypatch):
     assert os.environ[DYLD_LIBRARY_PATH] == "/somewhere/else"
 
 
-def test_dyld_path_is_restored_even_if_the_block_raises(monkeypatch):
+def test_dyld_path_is_restored_even_if_the_block_raises(monkeypatch) -> None:
     monkeypatch.setattr(_mpv_bootstrap, "_lib_dir", "/opt/homebrew/lib")
     monkeypatch.delenv(DYLD_LIBRARY_PATH, raising=False)
 
@@ -40,7 +40,7 @@ def test_dyld_path_is_restored_even_if_the_block_raises(monkeypatch):
     assert DYLD_LIBRARY_PATH not in os.environ
 
 
-def test_no_dyld_path_needed_when_libmpv_was_already_discoverable(monkeypatch):
+def test_no_dyld_path_needed_when_libmpv_was_already_discoverable(monkeypatch) -> None:
     monkeypatch.setattr(_mpv_bootstrap, "_lib_dir", None)
     monkeypatch.delenv(DYLD_LIBRARY_PATH, raising=False)
 
@@ -48,7 +48,7 @@ def test_no_dyld_path_needed_when_libmpv_was_already_discoverable(monkeypatch):
         assert DYLD_LIBRARY_PATH not in os.environ
 
 
-def test_importing_mpv_player_leaves_no_dyld_path_behind(tmp_path):
+def test_importing_mpv_player_leaves_no_dyld_path_behind(tmp_path) -> None:
     """The regression this whole mechanism exists for.
 
     `DYLD_LIBRARY_PATH` used to be set permanently by the libmpv bootstrap,

@@ -1,3 +1,6 @@
+from vat.media.video_scanner import VideoInfo
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QCoreApplication
 import pytest
 
 pytest.importorskip("PySide6")
@@ -10,33 +13,33 @@ from vat.ui.playlist_panel import PlaylistPanel  # noqa: E402
 
 
 @pytest.fixture(scope="module")
-def qapp():
+def qapp() -> QApplication | QCoreApplication:
     return QApplication.instance() or QApplication([])
 
 
-def _videos(*names):
+def _videos(*names) -> list[VideoInfo]:
     return [VideoInfo(path=f"/videos/{name}", rel_path=name) for name in names]
 
 
-def test_annotation_count_shown_when_nonzero(qapp):
+def test_annotation_count_shown_when_nonzero(qapp) -> None:
     panel = PlaylistPanel()
     panel.set_videos(_videos("a.mp4"), {}, {"a.mp4": 3})
     assert "(3)" in panel._list.item(0).text()
 
 
-def test_annotation_count_omitted_when_zero(qapp):
+def test_annotation_count_omitted_when_zero(qapp) -> None:
     panel = PlaylistPanel()
     panel.set_videos(_videos("a.mp4"), {}, {"a.mp4": 0})
     assert "(" not in panel._list.item(0).text()
 
 
-def test_annotation_count_omitted_when_missing(qapp):
+def test_annotation_count_omitted_when_missing(qapp) -> None:
     panel = PlaylistPanel()
     panel.set_videos(_videos("a.mp4"), {})  # no cut_counts arg at all
     assert "(" not in panel._list.item(0).text()
 
 
-def test_set_videos_emits_selected_on_first_population(qapp):
+def test_set_videos_emits_selected_on_first_population(qapp) -> None:
     panel = PlaylistPanel()
     selections = []
     panel.video_selected.connect(selections.append)
@@ -46,7 +49,7 @@ def test_set_videos_emits_selected_on_first_population(qapp):
     assert selections == ["/videos/a.mp4"]  # row 0 auto-selected
 
 
-def test_set_videos_does_not_reemit_when_selection_is_unchanged(qapp):
+def test_set_videos_does_not_reemit_when_selection_is_unchanged(qapp) -> None:
     # Regression test: refreshing the list (e.g. after Mark Annotated or
     # Add Annotation, which both call refresh_playlist()) with the same
     # video still selected used to re-fire video_selected every time,
@@ -68,7 +71,7 @@ def test_set_videos_does_not_reemit_when_selection_is_unchanged(qapp):
     assert panel.current_path() == "/videos/b.mp4"
 
 
-def test_set_videos_emits_when_previously_selected_video_disappears(qapp):
+def test_set_videos_emits_when_previously_selected_video_disappears(qapp) -> None:
     panel = PlaylistPanel()
     panel.set_videos(_videos("a.mp4", "b.mp4"), {})
     panel.select_relative(1)  # now on b.mp4
@@ -80,7 +83,7 @@ def test_set_videos_emits_when_previously_selected_video_disappears(qapp):
     assert selections == ["/videos/a.mp4"]
 
 
-def test_thumbnail_icon_set_when_provided(qapp, tmp_path):
+def test_thumbnail_icon_set_when_provided(qapp, tmp_path) -> None:
     thumb_path = tmp_path / "thumb.jpg"
     QPixmap(4, 4).save(str(thumb_path), "JPG")
 
@@ -90,14 +93,14 @@ def test_thumbnail_icon_set_when_provided(qapp, tmp_path):
     assert panel._list.item(0).icon().isNull() is False
 
 
-def test_no_thumbnail_icon_when_missing(qapp):
+def test_no_thumbnail_icon_when_missing(qapp) -> None:
     panel = PlaylistPanel()
     panel.set_videos(_videos("a.mp4"), {})
 
     assert panel._list.item(0).icon().isNull() is True
 
 
-def test_set_thumbnail_updates_icon_for_matching_row(qapp, tmp_path):
+def test_set_thumbnail_updates_icon_for_matching_row(qapp, tmp_path) -> None:
     thumb_path = tmp_path / "thumb.jpg"
     QPixmap(4, 4).save(str(thumb_path), "JPG")
 
@@ -111,7 +114,7 @@ def test_set_thumbnail_updates_icon_for_matching_row(qapp, tmp_path):
     assert panel._list.item(0).icon().isNull() is True  # unrelated row untouched
 
 
-def test_set_thumbnail_does_not_change_selection(qapp, tmp_path):
+def test_set_thumbnail_does_not_change_selection(qapp, tmp_path) -> None:
     thumb_path = tmp_path / "thumb.jpg"
     QPixmap(4, 4).save(str(thumb_path), "JPG")
 
@@ -128,7 +131,7 @@ def test_set_thumbnail_does_not_change_selection(qapp, tmp_path):
     assert selections == []  # setting an icon must never re-trigger video_selected
 
 
-def test_thumbnails_survive_a_set_videos_rebuild(qapp, tmp_path):
+def test_thumbnails_survive_a_set_videos_rebuild(qapp, tmp_path) -> None:
     # set_videos() clear()s and rebuilds every row, dropping their icons.
     # ThumbnailLoader deliberately reports each thumbnail only once per
     # session (re-checking 289 videos on every refresh_playlist() is what
@@ -148,7 +151,7 @@ def test_thumbnails_survive_a_set_videos_rebuild(qapp, tmp_path):
     assert panel._list.item(0).icon().isNull() is True
 
 
-def test_thumbnail_cache_drops_videos_that_are_gone(qapp, tmp_path):
+def test_thumbnail_cache_drops_videos_that_are_gone(qapp, tmp_path) -> None:
     thumb_path = tmp_path / "thumb.jpg"
     QPixmap(4, 4).save(str(thumb_path), "JPG")
 
@@ -161,14 +164,14 @@ def test_thumbnail_cache_drops_videos_that_are_gone(qapp, tmp_path):
     assert "a.mp4" not in panel._icons
 
 
-def test_set_thumbnail_unknown_rel_path_is_a_noop(qapp):
+def test_set_thumbnail_unknown_rel_path_is_a_noop(qapp) -> None:
     panel = PlaylistPanel()
     panel.set_videos(_videos("a.mp4"), {})
 
     panel.set_thumbnail("does-not-exist.mp4", "/some/path.jpg")  # must not raise
 
 
-def test_select_relative_steps_through_list(qapp):
+def test_select_relative_steps_through_list(qapp) -> None:
     panel = PlaylistPanel()
     panel.set_videos(_videos("a.mp4", "b.mp4", "c.mp4"), {})
     assert panel.current_path() == "/videos/a.mp4"
@@ -180,7 +183,7 @@ def test_select_relative_steps_through_list(qapp):
     assert panel.current_path() == "/videos/c.mp4"
 
 
-def test_select_relative_clamps_at_bounds(qapp):
+def test_select_relative_clamps_at_bounds(qapp) -> None:
     panel = PlaylistPanel()
     panel.set_videos(_videos("a.mp4", "b.mp4"), {})
 
@@ -193,14 +196,14 @@ def test_select_relative_clamps_at_bounds(qapp):
     assert panel.current_path() == "/videos/b.mp4"
 
 
-def test_select_relative_on_empty_list_is_a_noop(qapp):
+def test_select_relative_on_empty_list_is_a_noop(qapp) -> None:
     panel = PlaylistPanel()
     panel.set_videos([], {})
     panel.select_relative(1)  # must not raise
     assert panel.current_path() is None
 
 
-def test_next_and_previous_path(qapp):
+def test_next_and_previous_path(qapp) -> None:
     panel = PlaylistPanel()
     panel.set_videos(_videos("a.mp4", "b.mp4", "c.mp4"), {})
     assert panel.current_path() == "/videos/a.mp4"

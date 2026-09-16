@@ -1,3 +1,6 @@
+from vat.project.project import Project
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QCoreApplication
 import pytest
 
 pytest.importorskip("PySide6")
@@ -9,18 +12,18 @@ from vat.ui.label_editor_dialog import LabelEditorDialog  # noqa: E402
 
 
 @pytest.fixture(scope="module")
-def qapp():
+def qapp() -> QApplication | QCoreApplication:
     return QApplication.instance() or QApplication([])
 
 
 @pytest.fixture
-def project(qapp, tmp_project_dir, tmp_videos_dir):
+def project(qapp, tmp_project_dir, tmp_videos_dir) -> Project:
     p = Project.create(tmp_project_dir, tmp_videos_dir)
     p.add_label("goal", shortcut="Ctrl+G")
     return p
 
 
-def test_warn_if_shortcut_collides_flags_other_label_with_same_shortcut(project, monkeypatch):
+def test_warn_if_shortcut_collides_flags_other_label_with_same_shortcut(project, monkeypatch) -> None:
     dialog = LabelEditorDialog(project)
     warnings = []
     monkeypatch.setattr(
@@ -32,7 +35,7 @@ def test_warn_if_shortcut_collides_flags_other_label_with_same_shortcut(project,
     assert len(warnings) == 1
 
 
-def test_warn_if_shortcut_collides_silent_when_unique(project, monkeypatch):
+def test_warn_if_shortcut_collides_silent_when_unique(project, monkeypatch) -> None:
     dialog = LabelEditorDialog(project)
     warnings = []
     monkeypatch.setattr(
@@ -44,7 +47,7 @@ def test_warn_if_shortcut_collides_silent_when_unique(project, monkeypatch):
     assert warnings == []
 
 
-def test_warn_if_shortcut_collides_excludes_own_label(project, monkeypatch):
+def test_warn_if_shortcut_collides_excludes_own_label(project, monkeypatch) -> None:
     # Editing "goal" itself and keeping its own shortcut must not warn against itself.
     dialog = LabelEditorDialog(project)
     warnings = []
@@ -57,7 +60,7 @@ def test_warn_if_shortcut_collides_excludes_own_label(project, monkeypatch):
     assert warnings == []
 
 
-def test_split_and_join_strokes_round_trip():
+def test_split_and_join_strokes_round_trip() -> None:
     from vat.ui.label_editor_dialog import join_strokes, split_strokes
 
     assert split_strokes("") == ("", "")
@@ -71,7 +74,7 @@ def test_split_and_join_strokes_round_trip():
     assert join_strokes("", "L") == ""  # a second stroke alone is meaningless
 
 
-def test_describe_shortcut_spells_out_a_two_key_sequence():
+def test_describe_shortcut_spells_out_a_two_key_sequence() -> None:
     from vat.ui.label_editor_dialog import describe_shortcut
 
     assert "No shortcut" in describe_shortcut("")
@@ -81,7 +84,7 @@ def test_describe_shortcut_spells_out_a_two_key_sequence():
     assert "not together" in described
 
 
-def test_label_form_splits_an_existing_two_key_shortcut_across_both_fields(qapp):
+def test_label_form_splits_an_existing_two_key_shortcut_across_both_fields(qapp) -> None:
     from vat.ui.label_editor_dialog import _LabelFormDialog
 
     form = _LabelFormDialog(name="Switch Lane", shortcut="S, L")
@@ -91,7 +94,7 @@ def test_label_form_splits_an_existing_two_key_shortcut_across_both_fields(qapp)
     assert form.values() == ("Switch Lane", "", "S, L")
 
 
-def test_label_form_clear_shortcut_clears_both_fields(qapp):
+def test_label_form_clear_shortcut_clears_both_fields(qapp) -> None:
     from vat.ui.label_editor_dialog import _LabelFormDialog
 
     form = _LabelFormDialog(name="Switch Lane", shortcut="S, L")
@@ -100,7 +103,7 @@ def test_label_form_clear_shortcut_clears_both_fields(qapp):
     assert form.values()[2] == ""
 
 
-def test_warn_if_shortcut_collides_notes_a_shortcut_that_starts_another(project, monkeypatch):
+def test_warn_if_shortcut_collides_notes_a_shortcut_that_starts_another(project, monkeypatch) -> None:
     # "S" and "S, L" both work, but "S" alone has to wait out the chord
     # window first -- say so rather than let it be noticed as sluggishness.
     project.add_label("switch lane", shortcut="S, L")

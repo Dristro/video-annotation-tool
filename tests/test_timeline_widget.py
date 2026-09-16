@@ -1,3 +1,8 @@
+from vat.ui.timeline_widget import TimelineWidget
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QMouseEvent
+from PySide6.QtCore import QEvent
+from PySide6.QtCore import QCoreApplication
 import pytest
 
 pytest.importorskip("PySide6")
@@ -11,11 +16,11 @@ from vat.ui.timeline_widget import TimelineWidget, _continuation_tag  # noqa: E4
 
 
 @pytest.fixture(scope="module")
-def qapp():
+def qapp() -> QApplication | QCoreApplication:
     return QApplication.instance() or QApplication([])
 
 
-def _mouse_event(event_type, x, button=Qt.MouseButton.LeftButton, buttons=None):
+def _mouse_event(event_type: QEvent.Type, x: int, button=Qt.MouseButton.LeftButton, buttons=None) -> QMouseEvent:
     return QMouseEvent(
         event_type, QPointF(x, 20), button,
         buttons if buttons is not None else button,
@@ -24,14 +29,14 @@ def _mouse_event(event_type, x, button=Qt.MouseButton.LeftButton, buttons=None):
 
 
 @pytest.fixture
-def timeline(qapp):
+def timeline(qapp) -> TimelineWidget:
     tl = TimelineWidget()
     tl.resize(400, 60)
     tl.set_duration(10.0)
     return tl
 
 
-def test_drag_scrub_emits_seek_continuously(timeline):
+def test_drag_scrub_emits_seek_continuously(timeline) -> None:
     seeks = []
     timeline.seek_requested.connect(seeks.append)
 
@@ -44,7 +49,7 @@ def test_drag_scrub_emits_seek_continuously(timeline):
     assert seeks == sorted(seeks)  # dragging right -> monotonically increasing time
 
 
-def test_dragging_flag_set_and_cleared(timeline):
+def test_dragging_flag_set_and_cleared(timeline) -> None:
     assert timeline._dragging is False
     timeline.mousePressEvent(_mouse_event(QEvent.Type.MouseButtonPress, 40))
     assert timeline._dragging is True
@@ -52,7 +57,7 @@ def test_dragging_flag_set_and_cleared(timeline):
     assert timeline._dragging is False
 
 
-def test_set_position_ignored_while_dragging(timeline):
+def test_set_position_ignored_while_dragging(timeline) -> None:
     timeline.mousePressEvent(_mouse_event(QEvent.Type.MouseButtonPress, 40))
     position_during_drag = timeline._position
 
@@ -62,7 +67,7 @@ def test_set_position_ignored_while_dragging(timeline):
     timeline.mouseReleaseEvent(_mouse_event(QEvent.Type.MouseButtonRelease, 40))
 
 
-def test_set_position_honored_after_drag_ends(timeline):
+def test_set_position_honored_after_drag_ends(timeline) -> None:
     timeline.mousePressEvent(_mouse_event(QEvent.Type.MouseButtonPress, 40))
     timeline.mouseReleaseEvent(_mouse_event(QEvent.Type.MouseButtonRelease, 40))
 
@@ -71,7 +76,7 @@ def test_set_position_honored_after_drag_ends(timeline):
     assert timeline._position == 9.9
 
 
-def test_double_click_on_cut_emits_cut_double_clicked(timeline):
+def test_double_click_on_cut_emits_cut_double_clicked(timeline) -> None:
     cut = Cut(start=1.0, end=2.0, label="goal")
     timeline.set_cuts([cut])
     double_clicked = []
@@ -83,7 +88,7 @@ def test_double_click_on_cut_emits_cut_double_clicked(timeline):
     assert double_clicked == [cut.id]
 
 
-def test_double_click_on_empty_track_does_not_emit(timeline):
+def test_double_click_on_empty_track_does_not_emit(timeline) -> None:
     cut = Cut(start=1.0, end=2.0, label="goal")
     timeline.set_cuts([cut])
     double_clicked = []
@@ -95,7 +100,7 @@ def test_double_click_on_empty_track_does_not_emit(timeline):
     assert double_clicked == []
 
 
-def test_single_click_on_cut_selects_it(timeline):
+def test_single_click_on_cut_selects_it(timeline) -> None:
     cut = Cut(start=1.0, end=2.0, label="goal")
     timeline.set_cuts([cut])
     selected = []
@@ -107,7 +112,7 @@ def test_single_click_on_cut_selects_it(timeline):
     assert selected == [cut.id]
 
 
-def test_hover_over_cut_shows_tooltip_with_scores(timeline, monkeypatch):
+def test_hover_over_cut_shows_tooltip_with_scores(timeline, monkeypatch) -> None:
     cut = Cut(start=1.0, end=2.0, label="goal", scores={"Technique": 87.5})
     timeline.set_cuts([cut])
 
@@ -123,7 +128,7 @@ def test_hover_over_cut_shows_tooltip_with_scores(timeline, monkeypatch):
     assert "Technique: 87.5" in shown[0]
 
 
-def test_hover_over_cut_shows_justification_in_tooltip(timeline, monkeypatch):
+def test_hover_over_cut_shows_justification_in_tooltip(timeline, monkeypatch) -> None:
     cut = Cut(start=1.0, end=2.0, label="goal", justification="clean strike, top corner")
     timeline.set_cuts([cut])
 
@@ -137,7 +142,7 @@ def test_hover_over_cut_shows_justification_in_tooltip(timeline, monkeypatch):
     assert "clean strike, top corner" in shown[0]
 
 
-def test_hover_away_from_any_cut_does_not_show_tooltip(timeline, monkeypatch):
+def test_hover_away_from_any_cut_does_not_show_tooltip(timeline, monkeypatch) -> None:
     cut = Cut(start=1.0, end=2.0, label="goal")
     timeline.set_cuts([cut])
 
@@ -151,7 +156,7 @@ def test_hover_away_from_any_cut_does_not_show_tooltip(timeline, monkeypatch):
     assert shown == []
 
 
-def test_press_near_start_edge_begins_resize_not_scrub(timeline):
+def test_press_near_start_edge_begins_resize_not_scrub(timeline) -> None:
     cut = Cut(start=2.0, end=4.0, label="goal")
     timeline.set_cuts([cut])
     seeks = []
@@ -166,7 +171,7 @@ def test_press_near_start_edge_begins_resize_not_scrub(timeline):
     assert seeks == []  # a resize-grab must not also scrub/seek
 
 
-def test_press_away_from_edges_scrubs_as_before(timeline):
+def test_press_away_from_edges_scrubs_as_before(timeline) -> None:
     cut = Cut(start=2.0, end=4.0, label="goal")
     timeline.set_cuts([cut])
 
@@ -177,7 +182,7 @@ def test_press_away_from_edges_scrubs_as_before(timeline):
     assert timeline._dragging is True
 
 
-def test_drag_start_edge_updates_live_resize_and_clamps_to_min_length(timeline):
+def test_drag_start_edge_updates_live_resize_and_clamps_to_min_length(timeline) -> None:
     cut = Cut(start=2.0, end=4.0, label="goal")
     timeline.set_cuts([cut])
     start_x = timeline._x_for_time(2.0)
@@ -198,7 +203,7 @@ def test_drag_start_edge_updates_live_resize_and_clamps_to_min_length(timeline):
     assert new_start < new_end
 
 
-def test_drag_end_edge_clamps_to_duration(timeline):
+def test_drag_end_edge_clamps_to_duration(timeline) -> None:
     cut = Cut(start=2.0, end=4.0, label="goal")
     timeline.set_cuts([cut])
     end_x = timeline._x_for_time(4.0)
@@ -213,7 +218,7 @@ def test_drag_end_edge_clamps_to_duration(timeline):
     assert new_end <= timeline._duration
 
 
-def test_release_after_resize_emits_cut_resized_and_clears_state(timeline):
+def test_release_after_resize_emits_cut_resized_and_clears_state(timeline) -> None:
     cut = Cut(start=2.0, end=4.0, label="goal")
     timeline.set_cuts([cut])
     end_x = timeline._x_for_time(4.0)
@@ -235,7 +240,7 @@ def test_release_after_resize_emits_cut_resized_and_clears_state(timeline):
     assert timeline._live_resize is None
 
 
-def test_edge_grab_also_selects_the_cut(timeline):
+def test_edge_grab_also_selects_the_cut(timeline) -> None:
     cut = Cut(start=2.0, end=4.0, label="goal")
     timeline.set_cuts([cut])
     selected = []
@@ -246,43 +251,43 @@ def test_edge_grab_also_selects_the_cut(timeline):
     assert selected == [cut.id]
 
 
-def test_paints_without_error_with_waveform(timeline):
+def test_paints_without_error_with_waveform(timeline) -> None:
     timeline.set_waveform([0.1, 0.5, 1.0, 0.2] * 20)
     timeline.show()
 
     timeline.repaint()  # must not raise
 
 
-def test_paints_without_error_with_no_waveform(timeline):
+def test_paints_without_error_with_no_waveform(timeline) -> None:
     timeline.set_waveform(None)
     timeline.show()
 
     timeline.repaint()  # must not raise
 
 
-def test_set_waveform_stores_peaks(timeline):
+def test_set_waveform_stores_peaks(timeline) -> None:
     peaks = [0.1, 0.2, 0.3]
     timeline.set_waveform(peaks)
 
     assert timeline._waveform == peaks
 
 
-def test_continuation_tag_empty_for_ordinary_cut():
+def test_continuation_tag_empty_for_ordinary_cut() -> None:
     assert _continuation_tag(Cut(start=0.0, end=1.0)) == ""
 
 
-def test_continuation_tag_derived_from_continuation_id():
+def test_continuation_tag_derived_from_continuation_id() -> None:
     cut = Cut(start=0.0, end=1.0, continuation_id="abcdef123", continues_forward=True)
     assert _continuation_tag(cut) == " #abcd"
 
 
-def test_continuation_tag_matches_for_linked_pair():
+def test_continuation_tag_matches_for_linked_pair() -> None:
     front = Cut(start=8.0, end=10.0, continuation_id="shared123", continues_forward=True)
     back = Cut(start=0.0, end=2.0, continuation_id="shared123", continues_forward=False)
     assert _continuation_tag(front) == _continuation_tag(back)
 
 
-def test_hover_over_continuation_cut_tooltip_includes_tag(timeline, monkeypatch):
+def test_hover_over_continuation_cut_tooltip_includes_tag(timeline, monkeypatch) -> None:
     cut = Cut(start=1.0, end=2.0, label="goal", continuation_id="abcdef123", continues_forward=True)
     timeline.set_cuts([cut])
 
@@ -296,7 +301,7 @@ def test_hover_over_continuation_cut_tooltip_includes_tag(timeline, monkeypatch)
     assert "continuation #abcd" in shown[0]
 
 
-def test_paints_without_error_for_continuation_cuts(timeline):
+def test_paints_without_error_for_continuation_cuts(timeline) -> None:
     front_half = Cut(start=8.0, end=10.0, label="goal", continuation_id="link1", continues_forward=True)
     back_half = Cut(start=0.0, end=2.0, label="goal", continuation_id="link1", continues_forward=False)
     timeline.set_cuts([front_half, back_half])

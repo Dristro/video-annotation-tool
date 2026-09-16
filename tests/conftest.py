@@ -11,7 +11,7 @@ if SRC_ROOT not in sys.path:
 
 
 @pytest.fixture
-def tmp_videos_dir(tmp_path):
+def tmp_videos_dir(tmp_path) -> str:
     videos_dir = tmp_path / "videos"
     videos_dir.mkdir()
     for name in ("b.mp4", "a.mp4", "c.txt"):
@@ -20,6 +20,6 @@ def tmp_videos_dir(tmp_path):
 
 
 @pytest.fixture
-def tmp_project_dir(tmp_path):
+def tmp_project_dir(tmp_path) -> str:
     project_dir = tmp_path / "project"
     return str(project_dir)

@@ -4,7 +4,7 @@ from pathlib import Path
 from vat.media.thumbnails import get_or_create_thumbnail, thumbnail_path
 
 
-def test_thumbnail_path_deterministic_for_same_video(tmp_path):
+def test_thumbnail_path_deterministic_for_same_video(tmp_path) -> None:
     video = tmp_path / "clip.mp4"
     video.write_bytes(b"x")
     cache_dir = tmp_path / "cache"
@@ -12,7 +12,7 @@ def test_thumbnail_path_deterministic_for_same_video(tmp_path):
     assert thumbnail_path(str(video), str(cache_dir)) == thumbnail_path(str(video), str(cache_dir))
 
 
-def test_thumbnail_path_differs_for_different_videos(tmp_path):
+def test_thumbnail_path_differs_for_different_videos(tmp_path) -> None:
     cache_dir = tmp_path / "cache"
     a = tmp_path / "a.mp4"
     b = tmp_path / "b.mp4"
@@ -20,7 +20,7 @@ def test_thumbnail_path_differs_for_different_videos(tmp_path):
     assert thumbnail_path(str(a), str(cache_dir)) != thumbnail_path(str(b), str(cache_dir))
 
 
-def test_get_or_create_thumbnail_returns_none_when_extraction_fails(tmp_path):
+def test_get_or_create_thumbnail_returns_none_when_extraction_fails(tmp_path) -> None:
     # Not a real video -- ffmpeg (if installed) will fail on it; if ffmpeg
     # isn't installed at all, FileNotFoundError is caught the same way.
     # Either way this must degrade gracefully, never raise.
@@ -33,7 +33,7 @@ def test_get_or_create_thumbnail_returns_none_when_extraction_fails(tmp_path):
     assert result is None
 
 
-def test_get_or_create_thumbnail_uses_cache_on_second_call(tmp_path, monkeypatch):
+def test_get_or_create_thumbnail_uses_cache_on_second_call(tmp_path, monkeypatch) -> None:
     video = tmp_path / "clip.mp4"
     video.write_bytes(b"x")
     cache_dir = tmp_path / "cache"

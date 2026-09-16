@@ -1,3 +1,5 @@
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QCoreApplication
 import pytest
 
 pytest.importorskip("PySide6")
@@ -9,11 +11,11 @@ from vat.ui.project_dialog import NewProjectDialog  # noqa: E402
 
 
 @pytest.fixture(scope="module")
-def qapp():
+def qapp() -> QApplication | QCoreApplication:
     return QApplication.instance() or QApplication([])
 
 
-def test_scoring_controls_disabled_until_checkbox_checked(qapp):
+def test_scoring_controls_disabled_until_checkbox_checked(qapp) -> None:
     dialog = NewProjectDialog()
     assert dialog._scores_table.isEnabled() is False
     assert dialog._add_score_btn.isEnabled() is False
@@ -23,7 +25,7 @@ def test_scoring_controls_disabled_until_checkbox_checked(qapp):
     assert dialog._add_score_btn.isEnabled() is True
 
 
-def test_accept_creates_project_with_initial_scores(qapp, tmp_project_dir, tmp_videos_dir):
+def test_accept_creates_project_with_initial_scores(qapp, tmp_project_dir, tmp_videos_dir) -> None:
     dialog = NewProjectDialog()
     dialog._project_dir_edit.setText(tmp_project_dir)
     dialog._videos_dir_edit.setText(tmp_videos_dir)

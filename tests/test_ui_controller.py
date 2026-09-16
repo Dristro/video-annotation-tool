@@ -7,6 +7,7 @@ same controller methods (_on_add_cut, _on_set_annotated, ...) directly,
 which is where the actual annotation logic wiring lives.
 """
 
+from vat.project.project import Project
 import os
 
 import pytest
@@ -43,11 +44,11 @@ def window(qapp, tmp_project_dir, tmp_path):
     win.close()
 
 
-def test_main_window_builds_with_labels_loaded(window):
+def test_main_window_builds_with_labels_loaded(window) -> None:
     assert window.inspector_panel._label_combo.count() == 1
 
 
-def test_add_cut_via_controller_creates_entry(window):
+def test_add_cut_via_controller_creates_entry(window) -> None:
     video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     window._current_video_path = video_path
     window.inspector_panel.set_pending_in(1.0)
@@ -63,7 +64,7 @@ def test_add_cut_via_controller_creates_entry(window):
     assert window.inspector_panel.pending_in() is None
 
 
-def test_add_overlapping_cut_prompts_and_is_skipped_when_declined(window, monkeypatch):
+def test_add_overlapping_cut_prompts_and_is_skipped_when_declined(window, monkeypatch) -> None:
     video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     window._current_video_path = video_path
     window.inspector_panel.set_pending_in(1.0)
@@ -78,7 +79,7 @@ def test_add_overlapping_cut_prompts_and_is_skipped_when_declined(window, monkey
     assert len(window.project.get_entry("a.mp4").cuts) == 1
 
 
-def test_add_overlapping_cut_proceeds_when_confirmed(window, monkeypatch):
+def test_add_overlapping_cut_proceeds_when_confirmed(window, monkeypatch) -> None:
     video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     window._current_video_path = video_path
     window.inspector_panel.set_pending_in(1.0)
@@ -93,7 +94,7 @@ def test_add_overlapping_cut_proceeds_when_confirmed(window, monkeypatch):
     assert len(window.project.get_entry("a.mp4").cuts) == 2
 
 
-def test_mark_annotated_via_controller_updates_playlist(window):
+def test_mark_annotated_via_controller_updates_playlist(window) -> None:
     video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     window._current_video_path = video_path
 
@@ -102,7 +103,7 @@ def test_mark_annotated_via_controller_updates_playlist(window):
     assert window.project.is_annotated("a.mp4") is True
 
 
-def test_mark_annotated_does_not_reload_currently_selected_video(window):
+def test_mark_annotated_does_not_reload_currently_selected_video(window) -> None:
     # Regression test: refresh_playlist() (called by _on_set_annotated)
     # used to always re-fire video_selected for whatever video was already
     # selected, via PlaylistPanel.set_videos() re-triggering
@@ -121,7 +122,7 @@ def test_mark_annotated_does_not_reload_currently_selected_video(window):
     assert len(load_calls) == 1  # not reloaded
 
 
-def test_add_cut_does_not_reload_currently_selected_video(window):
+def test_add_cut_does_not_reload_currently_selected_video(window) -> None:
     open(os.path.join(window.project.config.videos_dir, "a.mp4"), "wb").close()
     load_calls = []
     window.video_panel.load = lambda path: load_calls.append(path)
@@ -135,7 +136,7 @@ def test_add_cut_does_not_reload_currently_selected_video(window):
     assert len(load_calls) == 1  # not reloaded
 
 
-def test_label_shortcut_registered(window):
+def test_label_shortcut_registered(window) -> None:
     assert "G" in window._label_shortcuts.shortcut_texts()
 
 
@@ -153,11 +154,11 @@ def scoring_window(qapp, tmp_project_dir, tmp_path):
     win.close()
 
 
-def test_score_fields_built_from_project_config(scoring_window):
+def test_score_fields_built_from_project_config(scoring_window) -> None:
     assert set(scoring_window.inspector_panel._score_inputs.keys()) == {"Technique", "Confidence"}
 
 
-def test_add_annotation_blocked_until_scores_valid(scoring_window):
+def test_add_annotation_blocked_until_scores_valid(scoring_window) -> None:
     win = scoring_window
     win._current_video_path = os.path.join(win.project.config.videos_dir, "a.mp4")
     win.inspector_panel.set_pending_in(1.0)
@@ -182,7 +183,7 @@ def test_add_annotation_blocked_until_scores_valid(scoring_window):
     assert win.inspector_panel._score_inputs["Technique"].text() == ""
 
 
-def test_cut_flagged_incomplete_after_new_score_added(scoring_window):
+def test_cut_flagged_incomplete_after_new_score_added(scoring_window) -> None:
     win = scoring_window
     win._current_video_path = os.path.join(win.project.config.videos_dir, "a.mp4")
     win.inspector_panel.set_pending_in(1.0)
@@ -199,7 +200,7 @@ def test_cut_flagged_incomplete_after_new_score_added(scoring_window):
     assert win.project.missing_scores(cut) == ["Difficulty"]
 
 
-def test_selecting_incomplete_cut_prefills_existing_scores_and_blanks_missing(scoring_window):
+def test_selecting_incomplete_cut_prefills_existing_scores_and_blanks_missing(scoring_window) -> None:
     win = scoring_window
     win.project.add_label("foul", "f")
     win._current_video_path = os.path.join(win.project.config.videos_dir, "a.mp4")
@@ -221,7 +222,7 @@ def test_selecting_incomplete_cut_prefills_existing_scores_and_blanks_missing(sc
     assert win.inspector_panel.pending_out() is None
 
 
-def test_edit_annotation_updates_label_and_fills_missing_score(scoring_window):
+def test_edit_annotation_updates_label_and_fills_missing_score(scoring_window) -> None:
     win = scoring_window
     win.project.add_label("foul", "f")
     win._current_video_path = os.path.join(win.project.config.videos_dir, "a.mp4")
@@ -244,7 +245,7 @@ def test_edit_annotation_updates_label_and_fills_missing_score(scoring_window):
     assert win.inspector_panel.selected_cut_id() == cut.id
 
 
-def test_edit_annotation_does_not_affect_add_annotation_state(scoring_window):
+def test_edit_annotation_does_not_affect_add_annotation_state(scoring_window) -> None:
     win = scoring_window
     win._current_video_path = os.path.join(win.project.config.videos_dir, "a.mp4")
     cut = win.project.add_cut("a.mp4", 1.0, 2.0, "goal", {"Technique": 50, "Confidence": 3})
@@ -259,7 +260,7 @@ def test_edit_annotation_does_not_affect_add_annotation_state(scoring_window):
     assert win.inspector_panel._add_cut_btn.isEnabled() is False
 
 
-def test_edit_annotation_without_mark_in_out_keeps_existing_timing(window):
+def test_edit_annotation_without_mark_in_out_keeps_existing_timing(window) -> None:
     window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal")
     window._refresh_cuts_and_status("a.mp4")
@@ -272,7 +273,7 @@ def test_edit_annotation_without_mark_in_out_keeps_existing_timing(window):
     assert updated.end == 2.0
 
 
-def test_edit_annotation_with_mark_in_out_retimes_cut(window):
+def test_edit_annotation_with_mark_in_out_retimes_cut(window) -> None:
     window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal")
     window._refresh_cuts_and_status("a.mp4")
@@ -287,7 +288,7 @@ def test_edit_annotation_with_mark_in_out_retimes_cut(window):
     assert updated.end == 20.0
 
 
-def test_edit_annotation_retime_overlap_prompts_and_is_skipped_when_declined(window, monkeypatch):
+def test_edit_annotation_retime_overlap_prompts_and_is_skipped_when_declined(window, monkeypatch) -> None:
     window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     window.project.add_cut("a.mp4", 1.0, 5.0, "goal")
     cut2 = window.project.add_cut("a.mp4", 10.0, 20.0, "goal")
@@ -304,7 +305,7 @@ def test_edit_annotation_retime_overlap_prompts_and_is_skipped_when_declined(win
     assert unchanged.end == 20.0
 
 
-def test_break_continuation_clears_link_when_confirmed(window, monkeypatch):
+def test_break_continuation_clears_link_when_confirmed(window, monkeypatch) -> None:
     window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal", continuation_id="link1", continues_forward=True)
     window._refresh_cuts_and_status("a.mp4")
@@ -317,7 +318,7 @@ def test_break_continuation_clears_link_when_confirmed(window, monkeypatch):
     assert updated.continues_forward is False
 
 
-def test_break_continuation_leaves_link_when_declined(window, monkeypatch):
+def test_break_continuation_leaves_link_when_declined(window, monkeypatch) -> None:
     window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal", continuation_id="link1", continues_forward=True)
     window._refresh_cuts_and_status("a.mp4")
@@ -330,7 +331,7 @@ def test_break_continuation_leaves_link_when_declined(window, monkeypatch):
     assert updated.continues_forward is True
 
 
-def test_add_cut_includes_justification(window):
+def test_add_cut_includes_justification(window) -> None:
     video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     window._current_video_path = video_path
     window.inspector_panel.set_pending_in(1.0)
@@ -345,7 +346,7 @@ def test_add_cut_includes_justification(window):
     assert window.inspector_panel.pending_justification() == ""
 
 
-def test_add_cut_without_justification_defaults_empty(window):
+def test_add_cut_without_justification_defaults_empty(window) -> None:
     video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     window._current_video_path = video_path
     window.inspector_panel.set_pending_in(1.0)
@@ -356,7 +357,7 @@ def test_add_cut_without_justification_defaults_empty(window):
     assert window.project.get_entry("a.mp4").cuts[0].justification == ""
 
 
-def test_edit_annotation_updates_justification(window):
+def test_edit_annotation_updates_justification(window) -> None:
     window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal", justification="first draft")
     window._refresh_cuts_and_status("a.mp4")
@@ -368,7 +369,7 @@ def test_edit_annotation_updates_justification(window):
     assert window.project.get_entry("a.mp4").cuts[0].justification == "revised reasoning"
 
 
-def test_edit_annotation_without_touching_justification_keeps_it(window):
+def test_edit_annotation_without_touching_justification_keeps_it(window) -> None:
     window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal", justification="keep me")
     window._refresh_cuts_and_status("a.mp4")
@@ -379,7 +380,7 @@ def test_edit_annotation_without_touching_justification_keeps_it(window):
     assert window.project.get_entry("a.mp4").cuts[0].justification == "keep me"
 
 
-def test_cut_resize_preserves_justification(window):
+def test_cut_resize_preserves_justification(window) -> None:
     window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal", justification="keep me")
     window._refresh_cuts_and_status("a.mp4")
@@ -389,7 +390,7 @@ def test_cut_resize_preserves_justification(window):
     assert window.project.get_entry("a.mp4").cuts[0].justification == "keep me"
 
 
-def test_undo_redo_edit_cut_justification(window):
+def test_undo_redo_edit_cut_justification(window) -> None:
     window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal", justification="original")
     window._refresh_cuts_and_status("a.mp4")
@@ -405,7 +406,7 @@ def test_undo_redo_edit_cut_justification(window):
     assert window.project.get_entry("a.mp4").cuts[0].justification == "updated"
 
 
-def test_undo_add_cut_with_justification_then_redo_restores_it(window):
+def test_undo_add_cut_with_justification_then_redo_restores_it(window) -> None:
     video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     window._current_video_path = video_path
     window.inspector_panel.set_pending_in(1.0)
@@ -419,7 +420,7 @@ def test_undo_add_cut_with_justification_then_redo_restores_it(window):
     assert window.project.get_entry("a.mp4").cuts[0].justification == "why this cut matters"
 
 
-def test_cut_resized_updates_timing(window):
+def test_cut_resized_updates_timing(window) -> None:
     window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal")
     window._refresh_cuts_and_status("a.mp4")
@@ -431,7 +432,7 @@ def test_cut_resized_updates_timing(window):
     assert updated.end == 8.0
 
 
-def test_cut_resized_noop_when_range_unchanged(window):
+def test_cut_resized_noop_when_range_unchanged(window) -> None:
     window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal")
     window._refresh_cuts_and_status("a.mp4")
@@ -441,7 +442,7 @@ def test_cut_resized_noop_when_range_unchanged(window):
     assert window._undo_stack.can_undo() is False
 
 
-def test_cut_resized_overlap_prompts_and_is_skipped_when_declined(window, monkeypatch):
+def test_cut_resized_overlap_prompts_and_is_skipped_when_declined(window, monkeypatch) -> None:
     window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     window.project.add_cut("a.mp4", 10.0, 15.0, "goal")
     cut2 = window.project.add_cut("a.mp4", 20.0, 25.0, "goal")
@@ -454,7 +455,7 @@ def test_cut_resized_overlap_prompts_and_is_skipped_when_declined(window, monkey
     assert unchanged.start == 20.0
 
 
-def test_undo_redo_cut_resize(window):
+def test_undo_redo_cut_resize(window) -> None:
     window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal")
     window._refresh_cuts_and_status("a.mp4")
@@ -471,7 +472,7 @@ def test_undo_redo_cut_resize(window):
     assert reapplied.end == 8.0
 
 
-def test_undo_add_cut_removes_it(window):
+def test_undo_add_cut_removes_it(window) -> None:
     video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     window._current_video_path = video_path
     window.inspector_panel.set_pending_in(1.0)
@@ -485,7 +486,7 @@ def test_undo_add_cut_removes_it(window):
     assert entry is None or entry.cuts == []
 
 
-def test_redo_add_cut_restores_same_id(window):
+def test_redo_add_cut_restores_same_id(window) -> None:
     video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     window._current_video_path = video_path
     window.inspector_panel.set_pending_in(1.0)
@@ -502,12 +503,12 @@ def test_redo_add_cut_restores_same_id(window):
     assert cuts[0].label == "goal"
 
 
-def test_undo_redo_noop_when_stack_empty(window):
+def test_undo_redo_noop_when_stack_empty(window) -> None:
     window._on_undo()  # must not raise
     window._on_redo()  # must not raise
 
 
-def test_undo_delete_cut_restores_it(window):
+def test_undo_delete_cut_restores_it(window) -> None:
     video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     window._current_video_path = video_path
     cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal")
@@ -524,7 +525,7 @@ def test_undo_delete_cut_restores_it(window):
     assert cuts[0].label == "goal"
 
 
-def test_redo_delete_cut_removes_it_again(window):
+def test_redo_delete_cut_removes_it_again(window) -> None:
     video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     window._current_video_path = video_path
     cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal")
@@ -538,7 +539,7 @@ def test_redo_delete_cut_removes_it_again(window):
     assert window.project.get_entry("a.mp4").cuts == []
 
 
-def test_undo_edit_cut_restores_previous_label_and_scores(window):
+def test_undo_edit_cut_restores_previous_label_and_scores(window) -> None:
     video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     window._current_video_path = video_path
     window.project.add_label("foul", "f")
@@ -555,7 +556,7 @@ def test_undo_edit_cut_restores_previous_label_and_scores(window):
     assert updated.scores == {"Technique": 50}
 
 
-def test_redo_edit_cut_reapplies_new_label(window):
+def test_redo_edit_cut_reapplies_new_label(window) -> None:
     video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     window._current_video_path = video_path
     window.project.add_label("foul", "f")
@@ -570,7 +571,7 @@ def test_redo_edit_cut_reapplies_new_label(window):
     assert window.project.get_entry("a.mp4").cuts[0].label == "foul"
 
 
-def test_undo_redo_edit_cut_retiming(window):
+def test_undo_redo_edit_cut_retiming(window) -> None:
     video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     window._current_video_path = video_path
     cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal")
@@ -592,7 +593,7 @@ def test_undo_redo_edit_cut_retiming(window):
     assert reapplied.end == 20.0
 
 
-def test_undo_after_switching_videos_does_not_crash_and_still_applies(window):
+def test_undo_after_switching_videos_does_not_crash_and_still_applies(window) -> None:
     # Undoing an action recorded on a video that isn't the current one
     # anymore must still mutate the right data without touching the UI
     # for whatever video happens to be selected now.
@@ -611,7 +612,7 @@ def test_undo_after_switching_videos_does_not_crash_and_still_applies(window):
     assert entry is None or entry.cuts == []
 
 
-def test_theme_menu_defaults_to_saved_preference(qapp, tmp_project_dir, tmp_path, monkeypatch):
+def test_theme_menu_defaults_to_saved_preference(qapp, tmp_project_dir, tmp_path, monkeypatch) -> None:
     from vat import app_settings
 
     monkeypatch.setattr(app_settings, "_settings_path", lambda: tmp_path / "settings.json")
@@ -629,7 +630,7 @@ def test_theme_menu_defaults_to_saved_preference(qapp, tmp_project_dir, tmp_path
         win.close()
 
 
-def test_set_theme_applies_and_saves(window, monkeypatch, tmp_path):
+def test_set_theme_applies_and_saves(window, monkeypatch, tmp_path) -> None:
     from vat import app_settings
 
     monkeypatch.setattr(app_settings, "_settings_path", lambda: tmp_path / "settings.json")
@@ -641,12 +642,12 @@ def test_set_theme_applies_and_saves(window, monkeypatch, tmp_path):
     assert window_color.lightness() >= 128
 
 
-def test_switch_project_updates_recent_menu(window, monkeypatch, tmp_path):
+def test_switch_project_updates_recent_menu(window, monkeypatch, tmp_path) -> None:
     from vat import app_settings
 
     monkeypatch.setattr(app_settings, "_settings_path", lambda: tmp_path / "settings.json")
 
-    def _new_project(name):
+    def _new_project(name: str) -> Project:
         proj_dir = tmp_path / f"{name}_project"
         videos_dir = tmp_path / f"{name}_videos"
         videos_dir.mkdir()
@@ -663,12 +664,12 @@ def test_switch_project_updates_recent_menu(window, monkeypatch, tmp_path):
     assert [a.text() for a in window._recent_menu.actions()] == [project_a.config.project_dir]
 
 
-def test_open_recent_switches_project(window, monkeypatch, tmp_path):
+def test_open_recent_switches_project(window, monkeypatch, tmp_path) -> None:
     from vat import app_settings
 
     monkeypatch.setattr(app_settings, "_settings_path", lambda: tmp_path / "settings.json")
 
-    def _new_project(name):
+    def _new_project(name: str) -> Project:
         proj_dir = tmp_path / f"{name}_project"
         videos_dir = tmp_path / f"{name}_videos"
         videos_dir.mkdir()
@@ -684,7 +685,7 @@ def test_open_recent_switches_project(window, monkeypatch, tmp_path):
     assert window.project.config.project_dir == project_a.config.project_dir
 
 
-def test_refresh_playlist_does_not_extract_thumbnails_synchronously(window, monkeypatch):
+def test_refresh_playlist_does_not_extract_thumbnails_synchronously(window, monkeypatch) -> None:
     # Regression test: refresh_playlist() used to call get_or_create_thumbnail()
     # (an ffmpeg subprocess) inline for every video, on the main thread. That
     # blocked the UI on every mutating action (Mark Annotated, add/edit/delete
@@ -698,7 +699,7 @@ def test_refresh_playlist_does_not_extract_thumbnails_synchronously(window, monk
 
     calling_threads = []
 
-    def _record_and_return(video_path, cache_dir):
+    def _record_and_return(video_path, cache_dir) -> None:
         calling_threads.append(threading.current_thread())
         return None
 
@@ -718,7 +719,7 @@ def test_refresh_playlist_does_not_extract_thumbnails_synchronously(window, monk
     assert threading.main_thread() not in calling_threads
 
 
-def test_mark_annotated_does_not_re_queue_thumbnail_work(window, monkeypatch):
+def test_mark_annotated_does_not_re_queue_thumbnail_work(window, monkeypatch) -> None:
     # Regression test for the reported freeze: moving extraction off the
     # main thread wasn't enough on its own. refresh_playlist() runs on
     # nearly every mutating action, and each run used to re-queue every
@@ -761,7 +762,7 @@ def test_mark_annotated_does_not_re_queue_thumbnail_work(window, monkeypatch):
     assert threading.active_count() <= threads_before
 
 
-def test_refresh_playlist_includes_annotation_counts(window):
+def test_refresh_playlist_includes_annotation_counts(window) -> None:
     # refresh_playlist() needs a real file for its filesystem scan
     # (project.list_videos()) to find -- but populating the playlist also
     # auto-selects row 0, which would normally cascade into
@@ -779,7 +780,7 @@ def test_refresh_playlist_includes_annotation_counts(window):
     assert "(2)" in window.playlist_panel._list.item(0).text()
 
 
-def test_timeline_double_click_selects_and_seeks(window):
+def test_timeline_double_click_selects_and_seeks(window) -> None:
     video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
     window._current_video_path = video_path
     cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal")
@@ -793,14 +794,14 @@ def test_timeline_double_click_selects_and_seeks(window):
     assert window.inspector_panel.selected_cut_id() == cut.id
 
 
-def test_navigate_left_right_do_not_raise_without_a_loaded_video(window):
+def test_navigate_left_right_do_not_raise_without_a_loaded_video(window) -> None:
     # No real player is constructed in these tests -- seek_relative() must
     # be a safe no-op rather than raising when _player is None.
     window._on_navigate_requested("left")
     window._on_navigate_requested("right")
 
 
-def test_navigate_up_down_steps_playlist(window):
+def test_navigate_up_down_steps_playlist(window) -> None:
     # Stub out select_relative rather than populating real video files and
     # calling refresh_playlist(): that would auto-select row 0, which fires
     # _on_video_selected -> video_panel.load() -> a real MpvPlayer. Wiring
@@ -836,7 +837,7 @@ def two_video_window(qapp, tmp_project_dir, tmp_path):
     win.close()
 
 
-def test_continuation_full_flow_across_two_videos(two_video_window):
+def test_continuation_full_flow_across_two_videos(two_video_window) -> None:
     win = two_video_window
 
     # -- Video A: mark in near the end, check "continues", add --
@@ -876,7 +877,7 @@ def test_continuation_full_flow_across_two_videos(two_video_window):
     assert win.inspector_panel._pending_continuation_cut is None
 
 
-def test_continues_checkbox_disabled_on_last_video(two_video_window):
+def test_continues_checkbox_disabled_on_last_video(two_video_window) -> None:
     win = two_video_window
     win.playlist_panel.select_relative(1)  # move to b.mp4, the last video
     win._on_video_selected(win.playlist_panel.current_path())
@@ -884,7 +885,7 @@ def test_continues_checkbox_disabled_on_last_video(two_video_window):
     assert win.inspector_panel._continues_checkbox.isEnabled() is False
 
 
-def test_continues_checkbox_enabled_when_not_last_video(two_video_window):
+def test_continues_checkbox_enabled_when_not_last_video(two_video_window) -> None:
     win = two_video_window
     win._on_video_selected(win.playlist_panel.current_path())  # a.mp4, has a next video
 

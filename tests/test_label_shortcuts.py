@@ -1,3 +1,5 @@
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QCoreApplication
 import time
 
 import pytest
@@ -31,7 +33,7 @@ TIMEOUT_MS = 60  # keep the chord window short so tests don't crawl
 
 
 @pytest.fixture(scope="module")
-def qapp():
+def qapp() -> QApplication | QCoreApplication:
     return QApplication.instance() or QApplication([])
 
 
@@ -51,14 +53,14 @@ def harness(qapp):
     window.close()
 
 
-def _settle(qapp, ms=TIMEOUT_MS * 3):
+def _settle(qapp, ms=TIMEOUT_MS * 3) -> None:
     deadline = time.monotonic() + ms / 1000
     while time.monotonic() < deadline:
         qapp.processEvents()
         time.sleep(0.005)
 
 
-def _press(qapp, target, *keys):
+def _press(qapp, target, *keys) -> None:
     for key in keys:
         QTest.keyClick(target, key)
         qapp.processEvents()
@@ -78,7 +80,7 @@ def _press(qapp, target, *keys):
         ((Qt.Key.Key_D,), ["Dangerous Turn"]),
     ],
 )
-def test_every_real_label_shortcut_reaches_its_own_label(qapp, harness, keys, expected):
+def test_every_real_label_shortcut_reaches_its_own_label(qapp, harness, keys, expected) -> None:
     # Regression test for the core bug: Qt's shortcut map prefers an exact
     # match over a partial one, so registering "S" and "S, L" as ordinary
     # QShortcuts made pressing S fire "Speeding" immediately and left
@@ -92,7 +94,7 @@ def test_every_real_label_shortcut_reaches_its_own_label(qapp, harness, keys, ex
     assert fired == expected
 
 
-def test_prefix_shortcut_is_not_registered_twice_with_qt(qapp, harness):
+def test_prefix_shortcut_is_not_registered_twice_with_qt(qapp, harness) -> None:
     # The longer sequences must NOT be handed to Qt at all -- that is what
     # keeps its exact-match-wins rule from shadowing them again.
     window, _, manager, _ = harness
@@ -104,7 +106,7 @@ def test_prefix_shortcut_is_not_registered_twice_with_qt(qapp, harness):
     assert manager.shortcut_texts() == ["B", "D", "J", "J, R", "R, E", "S", "S, L", "S, R", "U"]
 
 
-def test_prefix_shortcut_followed_by_unrelated_key_fires_both(qapp, harness):
+def test_prefix_shortcut_followed_by_unrelated_key_fires_both(qapp, harness) -> None:
     # Pressing S then some other bound key must commit "S" and then let the
     # other key do its normal thing -- neither may be swallowed.
     window, _, manager, fired = harness
@@ -115,7 +117,7 @@ def test_prefix_shortcut_followed_by_unrelated_key_fires_both(qapp, harness):
     assert fired == ["Speeding", "U Turn"]
 
 
-def test_escape_cancels_a_pending_sequence(qapp, harness):
+def test_escape_cancels_a_pending_sequence(qapp, harness) -> None:
     window, _, manager, fired = harness
     manager.set_labels(REAL_LABELS)
 
@@ -124,7 +126,7 @@ def test_escape_cancels_a_pending_sequence(qapp, harness):
     assert fired == []
 
 
-def test_typing_in_a_text_field_never_selects_a_label(qapp, harness):
+def test_typing_in_a_text_field_never_selects_a_label(qapp, harness) -> None:
     # QLineEdit claims plain printable keys via ShortcutOverride, so the
     # bare "S" shortcut never fires while it has focus -- which also means
     # no pending sequence opens and no key gets intercepted.
@@ -138,7 +140,7 @@ def test_typing_in_a_text_field_never_selects_a_label(qapp, harness):
     assert fired == []
 
 
-def test_chord_completion_does_not_leak_into_the_focused_widget(qapp, harness):
+def test_chord_completion_does_not_leak_into_the_focused_widget(qapp, harness) -> None:
     # The completing stroke is consumed: finishing "S, L" must not also type
     # an "l" somewhere.
     window, line_edit, manager, fired = harness
@@ -150,14 +152,14 @@ def test_chord_completion_does_not_leak_into_the_focused_widget(qapp, harness):
     assert line_edit.text() == ""
 
 
-def test_labels_without_shortcuts_are_skipped(qapp, harness):
+def test_labels_without_shortcuts_are_skipped(qapp, harness) -> None:
     window, _, manager, _ = harness
     manager.set_labels([Label("No Key", ""), Label("Keyed", "K")])
 
     assert manager.shortcut_texts() == ["K"]
 
 
-def test_set_labels_replaces_previous_bindings(qapp, harness):
+def test_set_labels_replaces_previous_bindings(qapp, harness) -> None:
     window, _, manager, fired = harness
     manager.set_labels([Label("Old", "O")])
     manager.set_labels([Label("New", "N")])
@@ -169,7 +171,7 @@ def test_set_labels_replaces_previous_bindings(qapp, harness):
     assert fired == ["New"]
 
 
-def test_three_stroke_chain_resolves_each_length(qapp, harness):
+def test_three_stroke_chain_resolves_each_length(qapp, harness) -> None:
     # Nothing in the app builds these today, but the pending window is
     # written to nest rather than assume exactly two strokes.
     window, _, manager, fired = harness
@@ -187,7 +189,7 @@ def test_three_stroke_chain_resolves_each_length(qapp, harness):
     assert fired == ["Three"]
 
 
-def test_pending_sequence_does_not_block_unrelated_app_shortcuts(qapp, harness):
+def test_pending_sequence_does_not_block_unrelated_app_shortcuts(qapp, harness) -> None:
     # A non-label QShortcut (Space = play/pause, in the real app) pressed
     # during the pending window must still fire.
     window, _, manager, fired = harness

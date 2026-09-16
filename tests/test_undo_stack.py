@@ -1,11 +1,12 @@
+from vat.project.undo_stack import Command
 from vat.project.undo_stack import Command, UndoStack
 
 
-def _tracking_command(log, name):
+def _tracking_command(log, name: str) -> Command:
     return Command(undo=lambda: log.append(f"undo-{name}"), redo=lambda: log.append(f"redo-{name}"))
 
 
-def test_undo_calls_command_undo():
+def test_undo_calls_command_undo() -> None:
     log = []
     stack = UndoStack()
     stack.push(_tracking_command(log, "a"))
@@ -15,7 +16,7 @@ def test_undo_calls_command_undo():
     assert log == ["undo-a"]
 
 
-def test_redo_calls_command_redo():
+def test_redo_calls_command_redo() -> None:
     log = []
     stack = UndoStack()
     stack.push(_tracking_command(log, "a"))
@@ -26,19 +27,19 @@ def test_redo_calls_command_redo():
     assert log == ["undo-a", "redo-a"]
 
 
-def test_undo_on_empty_stack_is_a_noop():
+def test_undo_on_empty_stack_is_a_noop() -> None:
     stack = UndoStack()
     stack.undo()  # must not raise
     assert stack.can_undo() is False
 
 
-def test_redo_on_empty_stack_is_a_noop():
+def test_redo_on_empty_stack_is_a_noop() -> None:
     stack = UndoStack()
     stack.redo()  # must not raise
     assert stack.can_redo() is False
 
 
-def test_pushing_after_undo_clears_redo_stack():
+def test_pushing_after_undo_clears_redo_stack() -> None:
     log = []
     stack = UndoStack()
     stack.push(_tracking_command(log, "a"))
@@ -50,7 +51,7 @@ def test_pushing_after_undo_clears_redo_stack():
     assert stack.can_redo() is False
 
 
-def test_can_undo_can_redo_reflect_stack_state():
+def test_can_undo_can_redo_reflect_stack_state() -> None:
     stack = UndoStack()
     assert stack.can_undo() is False
     assert stack.can_redo() is False
@@ -64,7 +65,7 @@ def test_can_undo_can_redo_reflect_stack_state():
     assert stack.can_redo() is True
 
 
-def test_multiple_undo_redo_round_trip_in_order():
+def test_multiple_undo_redo_round_trip_in_order() -> None:
     log = []
     stack = UndoStack()
     stack.push(_tracking_command(log, "a"))

@@ -1,3 +1,5 @@
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QCoreApplication
 import pytest
 
 pytest.importorskip("PySide6")
@@ -9,18 +11,18 @@ from vat.app import apply_dark_theme  # noqa: E402
 
 
 @pytest.fixture(scope="module")
-def qapp():
+def qapp() -> QApplication | QCoreApplication:
     return QApplication.instance() or QApplication([])
 
 
-def test_apply_dark_theme_sets_dark_window_color(qapp):
+def test_apply_dark_theme_sets_dark_window_color(qapp) -> None:
     apply_dark_theme(qapp)
     window_color = qapp.palette().color(QPalette.ColorRole.Window)
     # Dark, not the default light-gray Qt window color.
     assert window_color.lightness() < 128
 
 
-def test_apply_dark_theme_keeps_text_readable(qapp):
+def test_apply_dark_theme_keeps_text_readable(qapp) -> None:
     apply_dark_theme(qapp)
     text_color = qapp.palette().color(QPalette.ColorRole.WindowText)
     window_color = qapp.palette().color(QPalette.ColorRole.Window)

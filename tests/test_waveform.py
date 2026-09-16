@@ -1,3 +1,4 @@
+from subprocess import CompletedProcess
 import struct
 import subprocess
 
@@ -9,7 +10,7 @@ def _fake_pcm_bytes(seconds: float, amplitude: int = 16000) -> bytes:
     return struct.pack(f"<{sample_count}h", *([amplitude] * sample_count))
 
 
-def test_waveform_path_deterministic_for_same_video(tmp_path):
+def test_waveform_path_deterministic_for_same_video(tmp_path) -> None:
     video = tmp_path / "clip.mp4"
     video.write_bytes(b"x")
     cache_dir = tmp_path / "cache"
@@ -17,7 +18,7 @@ def test_waveform_path_deterministic_for_same_video(tmp_path):
     assert waveform_path(str(video), str(cache_dir)) == waveform_path(str(video), str(cache_dir))
 
 
-def test_get_or_create_waveform_returns_none_when_extraction_fails(tmp_path):
+def test_get_or_create_waveform_returns_none_when_extraction_fails(tmp_path) -> None:
     video = tmp_path / "not-a-real-video.mp4"
     video.write_bytes(b"not a real video, just bytes")
     cache_dir = tmp_path / "cache"
@@ -25,13 +26,13 @@ def test_get_or_create_waveform_returns_none_when_extraction_fails(tmp_path):
     assert get_or_create_waveform(str(video), str(cache_dir)) is None
 
 
-def test_get_or_create_waveform_extracts_and_caches(tmp_path, monkeypatch):
+def test_get_or_create_waveform_extracts_and_caches(tmp_path, monkeypatch) -> None:
     video = tmp_path / "clip.mp4"
     video.write_bytes(b"x")
     cache_dir = tmp_path / "cache"
     calls = []
 
-    def fake_run(cmd, **kwargs):
+    def fake_run(cmd, **kwargs) -> CompletedProcess[bytes]:
         calls.append(cmd)
         return subprocess.CompletedProcess(cmd, 0, stdout=_fake_pcm_bytes(2.0))
 
@@ -47,12 +48,12 @@ def test_get_or_create_waveform_extracts_and_caches(tmp_path, monkeypatch):
     assert len(calls) == 1  # cached -- ffmpeg not invoked again
 
 
-def test_get_or_create_waveform_peaks_reflect_amplitude(tmp_path, monkeypatch):
+def test_get_or_create_waveform_peaks_reflect_amplitude(tmp_path, monkeypatch) -> None:
     video = tmp_path / "clip.mp4"
     video.write_bytes(b"x")
     cache_dir = tmp_path / "cache"
 
-    def fake_run(cmd, **kwargs):
+    def fake_run(cmd, **kwargs) -> CompletedProcess[bytes]:
         # Half max amplitude (16384 / 32768).
         return subprocess.CompletedProcess(cmd, 0, stdout=_fake_pcm_bytes(1.0, amplitude=16384))
 
@@ -63,7 +64,7 @@ def test_get_or_create_waveform_peaks_reflect_amplitude(tmp_path, monkeypatch):
     assert all(p == 0.5 for p in peaks)
 
 
-def test_get_or_create_waveform_regenerates_on_corrupt_cache(tmp_path, monkeypatch):
+def test_get_or_create_waveform_regenerates_on_corrupt_cache(tmp_path, monkeypatch) -> None:
     video = tmp_path / "clip.mp4"
     video.write_bytes(b"x")
     cache_dir = tmp_path / "cache"
@@ -73,7 +74,7 @@ def test_get_or_create_waveform_regenerates_on_corrupt_cache(tmp_path, monkeypat
 
     calls = []
 
-    def fake_run(cmd, **kwargs):
+    def fake_run(cmd, **kwargs) -> CompletedProcess[bytes]:
         calls.append(cmd)
         return subprocess.CompletedProcess(cmd, 0, stdout=_fake_pcm_bytes(1.0))
 

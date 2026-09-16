@@ -3,7 +3,7 @@ import threading
 from vat.playback.preloader import Preloader
 
 
-def test_preload_reads_file_without_error(tmp_path):
+def test_preload_reads_file_without_error(tmp_path) -> None:
     video = tmp_path / "clip.mp4"
     video.write_bytes(b"x" * 1000)
 
@@ -14,7 +14,7 @@ def test_preload_reads_file_without_error(tmp_path):
     assert not preloader._thread.is_alive()
 
 
-def test_preload_missing_file_does_not_raise(tmp_path):
+def test_preload_missing_file_does_not_raise(tmp_path) -> None:
     preloader = Preloader()
     preloader.preload(str(tmp_path / "does-not-exist.mp4"))
     preloader._thread.join(timeout=5)
@@ -22,7 +22,7 @@ def test_preload_missing_file_does_not_raise(tmp_path):
     assert not preloader._thread.is_alive()
 
 
-def test_preload_skips_when_already_in_flight(tmp_path, monkeypatch):
+def test_preload_skips_when_already_in_flight(tmp_path, monkeypatch) -> None:
     # Only the *next* queued video is ever worth warming -- a second
     # preload() call while one is still running must be a no-op, not
     # queued behind the first (Preloader's docstring/CLAUDE.md).
@@ -30,7 +30,7 @@ def test_preload_skips_when_already_in_flight(tmp_path, monkeypatch):
     release = threading.Event()
     calls = []
 
-    def fake_run(path):
+    def fake_run(path) -> None:
         calls.append(path)
         started.set()
         release.wait(timeout=5)
@@ -51,7 +51,7 @@ def test_preload_skips_when_already_in_flight(tmp_path, monkeypatch):
     assert calls == [str(video)]
 
 
-def test_preload_allows_new_call_once_previous_finished(tmp_path):
+def test_preload_allows_new_call_once_previous_finished(tmp_path) -> None:
     preloader = Preloader()
     video_a = tmp_path / "a.mp4"
     video_a.write_bytes(b"x" * 100)

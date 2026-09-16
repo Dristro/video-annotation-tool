@@ -4,84 +4,84 @@ from vat.models.score_definition import ScoreDefinition
 
 
 class TestScoreDefinitionValidation:
-    def test_defaults(self):
+    def test_defaults(self) -> None:
         defn = ScoreDefinition(name="Technique")
         assert defn.minimum == 0.0
         assert defn.maximum == 100.0
         assert defn.dtype == "float"
 
-    def test_rejects_empty_name(self):
+    def test_rejects_empty_name(self) -> None:
         with pytest.raises(ValueError):
             ScoreDefinition(name="   ")
 
-    def test_rejects_invalid_dtype(self):
+    def test_rejects_invalid_dtype(self) -> None:
         with pytest.raises(ValueError):
             ScoreDefinition(name="x", dtype="string")
 
-    def test_rejects_min_not_less_than_max(self):
+    def test_rejects_min_not_less_than_max(self) -> None:
         with pytest.raises(ValueError):
             ScoreDefinition(name="x", minimum=10, maximum=10)
         with pytest.raises(ValueError):
             ScoreDefinition(name="x", minimum=10, maximum=5)
 
-    def test_int_dtype_requires_whole_number_bounds(self):
+    def test_int_dtype_requires_whole_number_bounds(self) -> None:
         with pytest.raises(ValueError):
             ScoreDefinition(name="x", minimum=0.5, maximum=5, dtype="int")
         ScoreDefinition(name="x", minimum=1, maximum=5, dtype="int")  # ok
 
-    def test_round_trip(self):
+    def test_round_trip(self) -> None:
         defn = ScoreDefinition(name="Confidence", minimum=1, maximum=5, dtype="int")
         restored = ScoreDefinition.from_dict(defn.to_dict())
         assert restored == defn
 
-    def test_description_defaults_empty_and_strips(self):
+    def test_description_defaults_empty_and_strips(self) -> None:
         assert ScoreDefinition(name="x").description == ""
         assert ScoreDefinition(name="x", description="  how clean?  ").description == "how clean?"
 
-    def test_description_round_trip(self):
+    def test_description_round_trip(self) -> None:
         defn = ScoreDefinition(name="Technique", description="How clean was the execution?")
         restored = ScoreDefinition.from_dict(defn.to_dict())
         assert restored.description == "How clean was the execution?"
 
 
 class TestScoreDefinitionCoerce:
-    def test_valid_float_in_range(self):
+    def test_valid_float_in_range(self) -> None:
         defn = ScoreDefinition(name="Technique", minimum=0, maximum=100, dtype="float")
         assert defn.coerce("87.5") == 87.5
 
-    def test_valid_int_in_range(self):
+    def test_valid_int_in_range(self) -> None:
         defn = ScoreDefinition(name="Confidence", minimum=1, maximum=5, dtype="int")
         assert defn.coerce("3") == 3
         assert isinstance(defn.coerce("3"), int)
 
-    def test_rejects_empty(self):
+    def test_rejects_empty(self) -> None:
         defn = ScoreDefinition(name="x")
         with pytest.raises(ValueError):
             defn.coerce("")
         with pytest.raises(ValueError):
             defn.coerce("   ")
 
-    def test_rejects_non_numeric(self):
+    def test_rejects_non_numeric(self) -> None:
         defn = ScoreDefinition(name="x")
         with pytest.raises(ValueError):
             defn.coerce("abc")
 
-    def test_rejects_out_of_range_low(self):
+    def test_rejects_out_of_range_low(self) -> None:
         defn = ScoreDefinition(name="x", minimum=0, maximum=100)
         with pytest.raises(ValueError):
             defn.coerce("-1")
 
-    def test_rejects_out_of_range_high(self):
+    def test_rejects_out_of_range_high(self) -> None:
         defn = ScoreDefinition(name="x", minimum=0, maximum=100)
         with pytest.raises(ValueError):
             defn.coerce("100.01")
 
-    def test_boundary_values_accepted(self):
+    def test_boundary_values_accepted(self) -> None:
         defn = ScoreDefinition(name="x", minimum=0, maximum=100)
         assert defn.coerce("0") == 0.0
         assert defn.coerce("100") == 100.0
 
-    def test_rejects_fractional_value_for_int_dtype(self):
+    def test_rejects_fractional_value_for_int_dtype(self) -> None:
         defn = ScoreDefinition(name="x", minimum=0, maximum=10, dtype="int")
         with pytest.raises(ValueError):
             defn.coerce("3.5")

@@ -1,3 +1,5 @@
+from typing import Callable
+from PySide6.QtCore import QCoreApplication
 import time
 
 import pytest
@@ -12,11 +14,11 @@ from vat.playback.thumbnail_loader import ThumbnailLoader  # noqa: E402
 
 
 @pytest.fixture(scope="module")
-def qapp():
+def qapp() -> QCoreApplication:
     return QCoreApplication.instance() or QCoreApplication([])
 
 
-def _run_event_loop_until(qapp, predicate, timeout_ms=5000):
+def _run_event_loop_until(qapp, predicate: Callable[[], bool], timeout_ms=5000) -> bool:
     deadline = time.monotonic() + timeout_ms / 1000
     while time.monotonic() < deadline:
         qapp.processEvents()
@@ -25,7 +27,7 @@ def _run_event_loop_until(qapp, predicate, timeout_ms=5000):
     return False
 
 
-def test_already_cached_thumbnail_emitted_immediately_without_extraction(qapp, tmp_path, monkeypatch):
+def test_already_cached_thumbnail_emitted_immediately_without_extraction(qapp, tmp_path, monkeypatch) -> None:
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
     from vat.media.thumbnails import thumbnail_path
@@ -52,7 +54,7 @@ def test_already_cached_thumbnail_emitted_immediately_without_extraction(qapp, t
     assert extraction_calls == []
 
 
-def test_missing_thumbnail_extracted_in_background_and_emitted(qapp, tmp_path, monkeypatch):
+def test_missing_thumbnail_extracted_in_background_and_emitted(qapp, tmp_path, monkeypatch) -> None:
     cache_dir = tmp_path / "cache"
     video = VideoInfo(path=str(tmp_path / "b.mp4"), rel_path="b.mp4")
 
@@ -70,7 +72,7 @@ def test_missing_thumbnail_extracted_in_background_and_emitted(qapp, tmp_path, m
     assert results[0] == ("b.mp4", "/fake/thumb.jpg")
 
 
-def test_extraction_failure_emits_empty_string(qapp, tmp_path, monkeypatch):
+def test_extraction_failure_emits_empty_string(qapp, tmp_path, monkeypatch) -> None:
     cache_dir = tmp_path / "cache"
     video = VideoInfo(path=str(tmp_path / "c.mp4"), rel_path="c.mp4")
 
@@ -86,7 +88,7 @@ def test_extraction_failure_emits_empty_string(qapp, tmp_path, monkeypatch):
     assert results[0] == ("c.mp4", "")
 
 
-def test_failed_extraction_is_not_retried_on_the_next_call(qapp, tmp_path, monkeypatch):
+def test_failed_extraction_is_not_retried_on_the_next_call(qapp, tmp_path, monkeypatch) -> None:
     # Regression test: a video whose extraction fails never gets a cache
     # file written, so every later refresh_playlist() -- which fires on
     # nearly every mutating action -- used to re-queue the same doomed
@@ -117,7 +119,7 @@ def test_failed_extraction_is_not_retried_on_the_next_call(qapp, tmp_path, monke
     assert results == [("c.mp4", "")]
 
 
-def test_already_reported_thumbnail_is_not_rechecked(qapp, tmp_path, monkeypatch):
+def test_already_reported_thumbnail_is_not_rechecked(qapp, tmp_path, monkeypatch) -> None:
     # The cached fast path is cheap but not free (a resolve() + exists() per
     # video), and it runs on the main thread -- it must happen once per
     # video per session, not once per refresh_playlist().
@@ -139,7 +141,7 @@ def test_already_reported_thumbnail_is_not_rechecked(qapp, tmp_path, monkeypatch
     assert len(results) == 1
 
 
-def test_worker_pool_is_bounded(qapp, tmp_path, monkeypatch):
+def test_worker_pool_is_bounded(qapp, tmp_path, monkeypatch) -> None:
     # Regression test for the real freeze: one fresh thread per uncached
     # video meant 289 Thread.start() calls (each blocking until its thread
     # is running, each immediately forking an ffmpeg subprocess) on the
@@ -155,7 +157,7 @@ def test_worker_pool_is_bounded(qapp, tmp_path, monkeypatch):
     lock = threading.Lock()
     release = threading.Event()
 
-    def _slow_extract(path, cache_dir):
+    def _slow_extract(path, cache_dir) -> str:
         with lock:
             counter["live"] += 1
             concurrent.append(counter["live"])
@@ -175,7 +177,7 @@ def test_worker_pool_is_bounded(qapp, tmp_path, monkeypatch):
         release.set()
 
 
-def test_every_queued_video_is_reported_even_beyond_the_pool_size(qapp, tmp_path, monkeypatch):
+def test_every_queued_video_is_reported_even_beyond_the_pool_size(qapp, tmp_path, monkeypatch) -> None:
     cache_dir = tmp_path / "cache"
     videos = [VideoInfo(path=str(tmp_path / f"v{i}.mp4"), rel_path=f"v{i}.mp4") for i in range(20)]
     monkeypatch.setattr(

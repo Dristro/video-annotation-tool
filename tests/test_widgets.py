@@ -1,3 +1,6 @@
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
+from PySide6.QtCore import QCoreApplication
 import pytest
 
 pytest.importorskip("PySide6")
@@ -11,16 +14,16 @@ from vat.ui.widgets import SingleStrokeKeySequenceEdit, TransportLineEdit  # noq
 
 
 @pytest.fixture(scope="module")
-def qapp():
+def qapp() -> QApplication | QCoreApplication:
     return QApplication.instance() or QApplication([])
 
 
-def _press(edit: TransportLineEdit, key, text: str = "", modifiers=Qt.KeyboardModifier.NoModifier) -> None:
+def _press(edit: TransportLineEdit, key: Qt.Key, text: str = "", modifiers=Qt.KeyboardModifier.NoModifier) -> None:
     event = QKeyEvent(QEvent.Type.KeyPress, key, modifiers, text)
     edit.keyPressEvent(event)
 
 
-def test_plain_arrow_keys_are_forwarded_not_used_for_cursor_movement(qapp):
+def test_plain_arrow_keys_are_forwarded_not_used_for_cursor_movement(qapp) -> None:
     edit = TransportLineEdit()
     edit.setText("50")
     edit.setCursorPosition(0)  # cursor at the very start
@@ -36,7 +39,7 @@ def test_plain_arrow_keys_are_forwarded_not_used_for_cursor_movement(qapp):
     assert edit.cursorPosition() == 0
 
 
-def test_all_four_directions_forwarded(qapp):
+def test_all_four_directions_forwarded(qapp) -> None:
     edit = TransportLineEdit()
     seen = []
     edit.arrow_key_pressed.connect(seen.append)
@@ -47,14 +50,14 @@ def test_all_four_directions_forwarded(qapp):
     assert seen == ["left", "right", "up", "down"]
 
 
-def test_regular_typing_still_works(qapp):
+def test_regular_typing_still_works(qapp) -> None:
     edit = TransportLineEdit()
     _press(edit, Qt.Key.Key_5, text="5")
     _press(edit, Qt.Key.Key_0, text="0")
     assert edit.text() == "50"
 
 
-def test_modified_arrow_keys_are_not_intercepted(qapp):
+def test_modified_arrow_keys_are_not_intercepted(qapp) -> None:
     # Only plain (unmodified) arrow keys are transport shortcuts -- e.g.
     # Shift+Left for text selection should still behave like a normal
     # QLineEdit, not fire a navigation event.
@@ -69,7 +72,7 @@ def test_modified_arrow_keys_are_not_intercepted(qapp):
     assert seen == []
 
 
-def test_single_stroke_key_sequence_edit_records_one_combo(qapp):
+def test_single_stroke_key_sequence_edit_records_one_combo(qapp) -> None:
     edit = SingleStrokeKeySequenceEdit()
     edit.show()
 
@@ -78,7 +81,7 @@ def test_single_stroke_key_sequence_edit_records_one_combo(qapp):
     assert edit.keySequence().toString() == "Ctrl+G"
 
 
-def test_single_stroke_key_sequence_edit_replaces_not_appends(qapp):
+def test_single_stroke_key_sequence_edit_replaces_not_appends(qapp) -> None:
     # Regression test: plain QKeySequenceEdit accumulates up to 4 presses
     # into a multi-stroke chord by default -- pressing Ctrl+G, then
     # Ctrl+Shift+G to correct it, silently produced "Ctrl+G, Ctrl+Shift+G"
@@ -93,7 +96,7 @@ def test_single_stroke_key_sequence_edit_replaces_not_appends(qapp):
     assert edit.keySequence().toString() == "Ctrl+Shift+G"
 
 
-def test_single_stroke_key_sequence_edit_multiple_corrections(qapp):
+def test_single_stroke_key_sequence_edit_multiple_corrections(qapp) -> None:
     edit = SingleStrokeKeySequenceEdit()
     edit.show()
 

@@ -7,24 +7,24 @@ from PySide6.QtGui import QColor  # noqa: E402
 from vat.utils.colors import color_for_label, contrasting_text_color  # noqa: E402
 
 
-def test_color_for_label_is_deterministic():
+def test_color_for_label_is_deterministic() -> None:
     assert color_for_label("goal") == color_for_label("goal")
 
 
-def test_color_for_label_empty_is_gray():
+def test_color_for_label_empty_is_gray() -> None:
     assert color_for_label("") == QColor("#7f7f7f")
 
 
-def test_contrasting_text_color_dark_background_gets_white_text():
+def test_contrasting_text_color_dark_background_gets_white_text() -> None:
     assert contrasting_text_color(QColor("#000075")) == QColor("white")  # dark navy
 
 
-def test_contrasting_text_color_light_background_gets_black_text():
+def test_contrasting_text_color_light_background_gets_black_text() -> None:
     assert contrasting_text_color(QColor("#bcf60c")) == QColor("black")  # bright yellow-green
     assert contrasting_text_color(QColor("#fabebe")) == QColor("black")  # light pink
 
 
-def test_contrasting_text_color_covers_whole_palette_legibly():
+def test_contrasting_text_color_covers_whole_palette_legibly() -> None:
     # Every palette color must resolve to *some* readable choice -- this is
     # really a regression guard that the formula doesn't raise/return
     # something odd for any of the actual colors in use.

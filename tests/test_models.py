@@ -8,34 +8,34 @@ from vat.models.video_entry import VideoEntry
 
 
 class TestLabel:
-    def test_strips_whitespace(self):
+    def test_strips_whitespace(self) -> None:
         label = Label(name="  goal  ", shortcut=" g ")
         assert label.name == "goal"
         assert label.shortcut == "g"
 
-    def test_rejects_empty_name(self):
+    def test_rejects_empty_name(self) -> None:
         with pytest.raises(ValueError):
             Label(name="   ")
 
-    def test_round_trip(self):
+    def test_round_trip(self) -> None:
         label = Label(name="goal", shortcut="g", description="Ball crosses the line")
         assert Label.from_dict(label.to_dict()) == label
 
-    def test_description_defaults_empty_and_strips(self):
+    def test_description_defaults_empty_and_strips(self) -> None:
         assert Label(name="goal").description == ""
         assert Label(name="goal", description="  scored  ").description == "scored"
 
 
 class TestCut:
-    def test_rejects_end_before_start(self):
+    def test_rejects_end_before_start(self) -> None:
         with pytest.raises(ValueError):
             Cut(start=10, end=5)
 
-    def test_rejects_negative_times(self):
+    def test_rejects_negative_times(self) -> None:
         with pytest.raises(ValueError):
             Cut(start=-1, end=5)
 
-    def test_round_trip_preserves_id(self):
+    def test_round_trip_preserves_id(self) -> None:
         cut = Cut(start=1.0, end=2.0, label="goal")
         restored = Cut.from_dict(cut.to_dict())
         assert restored.id == cut.id
@@ -43,67 +43,67 @@ class TestCut:
         assert restored.end == cut.end
         assert restored.label == cut.label
 
-    def test_scores_default_empty(self):
+    def test_scores_default_empty(self) -> None:
         assert Cut(start=0, end=1).scores == {}
 
-    def test_scores_round_trip(self):
+    def test_scores_round_trip(self) -> None:
         cut = Cut(start=1.0, end=2.0, label="goal", scores={"Technique": 87.5, "Confidence": 3})
         restored = Cut.from_dict(cut.to_dict())
         assert restored.scores == {"Technique": 87.5, "Confidence": 3}
 
-    def test_scores_dict_is_independent_copy(self):
+    def test_scores_dict_is_independent_copy(self) -> None:
         original_scores = {"Technique": 50}
         cut = Cut(start=0, end=1, scores=original_scores)
         original_scores["Technique"] = 99  # mutate the caller's dict after construction
         assert cut.scores["Technique"] == 50  # cut must not alias it
 
-    def test_generates_unique_ids(self):
+    def test_generates_unique_ids(self) -> None:
         a = Cut(start=0, end=1)
         b = Cut(start=0, end=1)
         assert a.id != b.id
 
-    def test_continuation_fields_default(self):
+    def test_continuation_fields_default(self) -> None:
         cut = Cut(start=0, end=1)
         assert cut.continuation_id is None
         assert cut.continues_forward is False
 
-    def test_continuation_fields_round_trip(self):
+    def test_continuation_fields_round_trip(self) -> None:
         cut = Cut(start=0, end=1, continuation_id="abc123", continues_forward=True)
         restored = Cut.from_dict(cut.to_dict())
         assert restored.continuation_id == "abc123"
         assert restored.continues_forward is True
 
-    def test_continuation_fields_default_when_absent_from_dict(self):
+    def test_continuation_fields_default_when_absent_from_dict(self) -> None:
         # Older annotations.json files predate these fields entirely.
         restored = Cut.from_dict({"id": "x", "start": 0, "end": 1, "label": ""})
         assert restored.continuation_id is None
         assert restored.continues_forward is False
 
-    def test_justification_defaults_empty(self):
+    def test_justification_defaults_empty(self) -> None:
         assert Cut(start=0, end=1).justification == ""
 
-    def test_justification_strips_whitespace(self):
+    def test_justification_strips_whitespace(self) -> None:
         cut = Cut(start=0, end=1, justification="  because of X  ")
         assert cut.justification == "because of X"
 
-    def test_justification_round_trip(self):
+    def test_justification_round_trip(self) -> None:
         cut = Cut(start=1.0, end=2.0, justification="Clear foul, hand ball.")
         restored = Cut.from_dict(cut.to_dict())
         assert restored.justification == "Clear foul, hand ball."
 
-    def test_justification_default_when_absent_from_dict(self):
+    def test_justification_default_when_absent_from_dict(self) -> None:
         # Older annotations.json files predate this field entirely.
         restored = Cut.from_dict({"id": "x", "start": 0, "end": 1, "label": ""})
         assert restored.justification == ""
 
 
 class TestVideoEntry:
-    def test_default_not_annotated_no_cuts(self):
+    def test_default_not_annotated_no_cuts(self) -> None:
         entry = VideoEntry()
         assert entry.annotated is False
         assert entry.cuts == []
 
-    def test_round_trip(self):
+    def test_round_trip(self) -> None:
         entry = VideoEntry(annotated=True, cuts=[Cut(start=0, end=1, label="x")])
         restored = VideoEntry.from_dict(entry.to_dict())
         assert restored.annotated is True
@@ -112,14 +112,14 @@ class TestVideoEntry:
 
 
 class TestProjectConfig:
-    def test_find_label(self):
+    def test_find_label(self) -> None:
         config = ProjectConfig(
             project_dir="/tmp/p", videos_dir="/tmp/v", labels=[Label(name="goal", shortcut="g")]
         )
         assert config.find_label("goal") is not None
         assert config.find_label("missing") is None
 
-    def test_round_trip(self):
+    def test_round_trip(self) -> None:
         config = ProjectConfig(
             project_dir="/tmp/p", videos_dir="/tmp/v", labels=[Label(name="goal", shortcut="g")]
         )
@@ -128,12 +128,12 @@ class TestProjectConfig:
         assert restored.videos_dir == config.videos_dir
         assert restored.label_names() == ["goal"]
 
-    def test_scoring_disabled_by_default(self):
+    def test_scoring_disabled_by_default(self) -> None:
         config = ProjectConfig(project_dir="/tmp/p", videos_dir="/tmp/v")
         assert config.scoring_enabled is False
         assert config.score_definitions == []
 
-    def test_find_score_definition(self):
+    def test_find_score_definition(self) -> None:
         config = ProjectConfig(
             project_dir="/tmp/p",
             videos_dir="/tmp/v",
@@ -143,7 +143,7 @@ class TestProjectConfig:
         assert config.find_score_definition("Technique") is not None
         assert config.find_score_definition("missing") is None
 
-    def test_scoring_round_trip(self):
+    def test_scoring_round_trip(self) -> None:
         config = ProjectConfig(
             project_dir="/tmp/p",
             videos_dir="/tmp/v",

@@ -1,3 +1,5 @@
+from typing import Callable
+from PySide6.QtCore import QCoreApplication
 import pytest
 
 pytest.importorskip("PySide6")
@@ -9,11 +11,11 @@ from vat.playback.waveform_loader import WaveformLoader  # noqa: E402
 
 
 @pytest.fixture(scope="module")
-def qapp():
+def qapp() -> QCoreApplication:
     return QCoreApplication.instance() or QCoreApplication([])
 
 
-def _run_event_loop_until(qapp, predicate, timeout_ms=5000):
+def _run_event_loop_until(qapp, predicate: Callable[[], bool], timeout_ms=5000) -> bool:
     import time
 
     deadline = time.monotonic() + timeout_ms / 1000
@@ -24,7 +26,7 @@ def _run_event_loop_until(qapp, predicate, timeout_ms=5000):
     return False
 
 
-def test_load_emits_loaded_with_peaks(qapp, monkeypatch):
+def test_load_emits_loaded_with_peaks(qapp, monkeypatch) -> None:
     monkeypatch.setattr(waveform_loader_module, "get_or_create_waveform", lambda path, cache_dir: [0.1, 0.2])
 
     loader = WaveformLoader()
@@ -37,7 +39,7 @@ def test_load_emits_loaded_with_peaks(qapp, monkeypatch):
     assert results[0] == ("/videos/a.mp4", [0.1, 0.2])
 
 
-def test_load_emits_empty_list_when_extraction_fails(qapp, monkeypatch):
+def test_load_emits_empty_list_when_extraction_fails(qapp, monkeypatch) -> None:
     monkeypatch.setattr(waveform_loader_module, "get_or_create_waveform", lambda path, cache_dir: None)
 
     loader = WaveformLoader()

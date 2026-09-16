@@ -22,7 +22,7 @@ class WaveformLoader(QObject):
 
     loaded = Signal(str, list)  # video_path, peaks (empty list if extraction failed/no audio)
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
 
     def load(self, video_path: str, cache_dir: str) -> None:

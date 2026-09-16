@@ -19,7 +19,7 @@ class ProjectSettingsDialog(QDialog):
     with add/edit/remove/rename) and now share one dialog.
     """
 
-    def __init__(self, project: Project, parent=None, initial_tab: str = "labels"):
+    def __init__(self, project: Project, parent=None, initial_tab: str = "labels") -> None:
         super().__init__(parent)
         self.setWindowTitle("Project Settings")
         self.resize(560, 420)

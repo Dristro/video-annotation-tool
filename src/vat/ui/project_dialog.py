@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Self
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -28,7 +29,7 @@ from vat.ui.score_editor_dialog import _ScoreFormDialog
 class NewProjectDialog(QDialog):
     """Collects project dir, videos dir, and an initial (editable-later) label set."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: Self | None=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("New Project")
         self.resize(420, 400)
@@ -202,7 +203,7 @@ class NewProjectDialog(QDialog):
 class ProjectDialog(QDialog):
     """Entry-point dialog: create a new project or open an existing one."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Video Annotation Tool")
         self.setModal(True)

@@ -88,7 +88,7 @@ class LabelShortcutManager(QObject):
 
     label_activated = Signal(str)  # label name
 
-    def __init__(self, window: QWidget, chord_timeout_ms: int = CHORD_TIMEOUT_MS):
+    def __init__(self, window: QWidget, chord_timeout_ms: int = CHORD_TIMEOUT_MS) -> None:
         super().__init__(window)
         self._window = window
         self._shortcuts: list[QShortcut] = []

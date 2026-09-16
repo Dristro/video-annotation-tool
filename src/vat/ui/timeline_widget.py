@@ -48,7 +48,7 @@ class TimelineWidget(QWidget):
     cut_double_clicked = Signal(str)  # cut id
     cut_resized = Signal(str, float, float)  # cut id, new start, new end
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setMinimumHeight(WAVEFORM_MARGIN_TOP + WAVEFORM_HEIGHT + 12)
         self._duration: float = 0.0

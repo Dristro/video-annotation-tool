@@ -18,7 +18,7 @@ class AnnotationStore:
     so it can be read and understood without the private project.json.
     """
 
-    def __init__(self, path: Path, videos: dict[str, VideoEntry] | None = None):
+    def __init__(self, path: Path, videos: dict[str, VideoEntry] | None = None) -> None:
         self.path = Path(path)
         self.videos: dict[str, VideoEntry] = videos or {}
 

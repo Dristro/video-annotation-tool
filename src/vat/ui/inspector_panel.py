@@ -64,7 +64,7 @@ class InspectorPanel(QWidget):
     edit_labels_requested = Signal()
     navigate_requested = Signal(str)  # "left" | "right" | "up" | "down" -- from a score field's arrow keys
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._pending_in: float | None = None
         self._pending_out: float | None = None

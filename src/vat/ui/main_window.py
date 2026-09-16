@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from vat.models.cut import Cut
 import os
 import uuid
 
@@ -35,7 +36,7 @@ class MainWindow(QMainWindow):
     preview, and an inspector for annotation actions on the right.
     """
 
-    def __init__(self, project: Project):
+    def __init__(self, project: Project) -> None:
         super().__init__()
         self.project = project
         self._current_video_path: str | None = None
@@ -366,7 +367,7 @@ class MainWindow(QMainWindow):
             pass
         self._sync_after_undo_redo(rel)
 
-    def _restore_cut_and_sync(self, rel: str, cut) -> None:
+    def _restore_cut_and_sync(self, rel: str, cut: Cut) -> None:
         self.project.restore_cut(rel, cut)
         self._sync_after_undo_redo(rel)
 

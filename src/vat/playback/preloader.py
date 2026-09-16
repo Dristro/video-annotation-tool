@@ -16,7 +16,7 @@ PREFETCH_CHUNK_BYTES = 8 * 1024 * 1024  # 8 MiB
 class Preloader:
     """Best-effort background warm-up for the next video in the playlist queue."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
 

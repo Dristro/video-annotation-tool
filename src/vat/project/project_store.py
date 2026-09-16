@@ -21,7 +21,7 @@ from vat.errors import (
 class ProjectStore:
     """Reads/writes the private `project.json` config file for a project directory."""
 
-    def __init__(self, config: ProjectConfig):
+    def __init__(self, config: ProjectConfig) -> None:
         self.config = config
 
     @property

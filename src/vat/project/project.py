@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from vat.models.project_config import ProjectConfig
 from pathlib import Path
 
 from vat.annotations.annotation_store import AnnotationStore
@@ -17,7 +18,7 @@ class Project:
     operations spanning both files (like renaming a label) stay in sync.
     """
 
-    def __init__(self, project_store: ProjectStore, annotation_store: AnnotationStore):
+    def __init__(self, project_store: ProjectStore, annotation_store: AnnotationStore) -> None:
         self.project_store = project_store
         self.annotation_store = annotation_store
 
@@ -38,7 +39,7 @@ class Project:
         return cls(project_store, annotation_store)
 
     @property
-    def config(self):
+    def config(self) -> ProjectConfig:
         return self.project_store.config
 
     def set_videos_dir(self, videos_dir: str) -> None:

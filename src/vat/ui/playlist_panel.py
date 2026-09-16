@@ -22,7 +22,7 @@ class PlaylistPanel(QWidget):
     video_selected = Signal(str)  # emits an absolute video path
     change_videos_dir_requested = Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._paths_by_row: list[str] = []
         self._rel_paths_by_row: list[str] = []

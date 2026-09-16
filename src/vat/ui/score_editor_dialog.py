@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Self
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -32,9 +33,9 @@ class _ScoreFormDialog(QDialog):
     """Add/edit form for a single score definition: name, description, range, dtype."""
 
     def __init__(
-        self, parent=None, name: str = "", description: str = "",
+        self, parent: Self | None=None, name: str = "", description: str = "",
         minimum: float = 0.0, maximum: float = 100.0, dtype: str = DTYPE_FLOAT,
-    ):
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Score")
         layout = QVBoxLayout(self)
@@ -103,7 +104,7 @@ class _ScoresWidget(QWidget):
     ProjectSettingsDialog.
     """
 
-    def __init__(self, project: Project, parent=None):
+    def __init__(self, project: Project, parent: Self | None=None) -> None:
         super().__init__(parent)
         self._project = project
 
@@ -224,7 +225,7 @@ class ScoreEditorDialog(QDialog):
     ProjectSettingsDialog embeds as its "Scores" tab.
     """
 
-    def __init__(self, project: Project, parent=None):
+    def __init__(self, project: Project, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Edit Scores")
         self.resize(560, 360)

@@ -23,7 +23,7 @@ class UndoStack:
     action doesn't mean anything.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._undo: list[Command] = []
         self._redo: list[Command] = []
 

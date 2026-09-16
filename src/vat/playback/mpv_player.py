@@ -51,7 +51,7 @@ class VideoSurface(QOpenGLWidget):
 
     frame_ready = Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._mpv_core: mpv.MPV | None = None
         self._render_ctx: mpv.MpvRenderContext | None = None
@@ -134,7 +134,7 @@ class MpvPlayer:
     instance's `core` to `VideoSurface.bind_player()` to actually see video.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         # QApplication resets LC_NUMERIC away from "C" during its own init,
         # undoing python-mpv's import-time fix. libmpv hard-aborts the
         # process if LC_NUMERIC isn't "C" when the player is created, so

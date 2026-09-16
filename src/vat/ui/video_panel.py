@@ -49,7 +49,7 @@ class VideoPanel(QWidget):
     pause_changed = Signal(bool)
     playback_ended = Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._player: MpvPlayer | None = None
         self._position: float = 0.0

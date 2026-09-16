@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Self
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (
@@ -80,7 +81,7 @@ class _LabelFormDialog(QDialog):
     always something the user did on purpose.
     """
 
-    def __init__(self, parent=None, name: str = "", description: str = "", shortcut: str = ""):
+    def __init__(self, parent: Self | None=None, name: str = "", description: str = "", shortcut: str = "") -> None:
         super().__init__(parent)
         self.setWindowTitle("Label")
         first, second = split_strokes(shortcut)
@@ -150,7 +151,7 @@ class _LabelsWidget(QWidget):
     only the surrounding chrome (window title, Close button) differs.
     """
 
-    def __init__(self, project: Project, parent=None):
+    def __init__(self, project: Project, parent: Self | None=None) -> None:
         super().__init__(parent)
         self._project = project
 
@@ -300,7 +301,7 @@ class LabelEditorDialog(QDialog):
     ProjectSettingsDialog embeds as its "Labels" tab.
     """
 
-    def __init__(self, project: Project, parent=None):
+    def __init__(self, project: Project, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Edit Labels")
         self.resize(480, 340)

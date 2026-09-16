@@ -52,7 +52,7 @@ class ThumbnailLoader(QObject):
 
     loaded = Signal(str, str)  # rel_path, thumbnail path ("" if extraction failed)
 
-    def __init__(self, max_workers: int = MAX_WORKERS):
+    def __init__(self, max_workers: int = MAX_WORKERS) -> None:
         super().__init__()
         self._max_workers = max(1, max_workers)
         self._lock = threading.Lock()

@@ -204,3 +204,27 @@ def test_rename_score_definition_updates_description(tmp_project_dir, tmp_videos
     store.add_score_definition("Technique", description="old description")
     store.rename_score_definition("Technique", "Technique", new_description="new description")
     assert store.config.find_score_definition("Technique").description == "new description"
+
+
+def test_insert_label_and_score_definition_restore_order(tmp_project_dir, tmp_videos_dir) -> None:
+    store = ProjectStore.create(tmp_project_dir, tmp_videos_dir)
+    a = store.add_label("a")
+    store.add_label("b")
+    store.add_label("c")
+    store.remove_labels(["a"])
+    store.insert_label(a, 0)
+    assert store.config.label_names() == ["a", "b", "c"]
+    with pytest.raises(DuplicateLabelError):
+        store.insert_label(a, 0)
+
+    t = store.add_score_definition("T")
+    store.add_score_definition("U")
+    store.remove_score_definitions(["T"])
+    store.insert_score_definition(t, 0)
+    assert store.config.score_definition_names() == ["T", "U"]
+    with pytest.raises(DuplicateScoreDefinitionError):
+        store.insert_score_definition(t, 5)
+
+    reloaded = ProjectStore.load(tmp_project_dir)
+    assert reloaded.config.label_names() == ["a", "b", "c"]
+    assert reloaded.config.score_definition_names() == ["T", "U"]

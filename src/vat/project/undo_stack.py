@@ -26,6 +26,16 @@ class UndoStack:
     def __init__(self) -> None:
         self._undo: list[Command] = []
         self._redo: list[Command] = []
+        # Called after every undo()/redo() that actually ran a command.
+        # MainWindow uses it to resync views that a command may have
+        # changed underneath them (label set, score definitions) without
+        # every individual command having to know about widgets --
+        # commands stay pure Project mutations, which is what lets the
+        # settings dialogs push them without holding on to MainWindow.
+        self._listeners: list[Callable[[], None]] = []
+
+    def add_listener(self, listener: Callable[[], None]) -> None:
+        self._listeners.append(listener)
 
     def push(self, command: Command) -> None:
         self._undo.append(command)
@@ -43,6 +53,7 @@ class UndoStack:
         command = self._undo.pop()
         command.undo()
         self._redo.append(command)
+        self._notify()
 
     def redo(self) -> None:
         if not self._redo:
@@ -50,3 +61,8 @@ class UndoStack:
         command = self._redo.pop()
         command.redo()
         self._undo.append(command)
+        self._notify()
+
+    def _notify(self) -> None:
+        for listener in list(self._listeners):
+            listener()

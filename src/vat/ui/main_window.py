@@ -45,12 +45,14 @@ class MainWindow(QMainWindow):
         self._waveform_loader.loaded.connect(self._on_waveform_loaded)
         self._thumbnail_loader = ThumbnailLoader()
         self._thumbnail_loader.loaded.connect(self._on_thumbnail_loaded)
-        # Covers cut add/edit/delete only, not label/score renames --
-        # those propagate across every video's cuts (rename_*_everywhere)
-        # and would need a full before/after snapshot of every affected
-        # cut to undo cleanly, which is meaningfully more machinery than
-        # this stack currently has (BACKLOG.md).
+        # One stack for everything reversible: cut add/edit/resize/delete,
+        # continuation link/unlink, and every label/score edit made in the
+        # settings dialog (which pushes onto this same stack). The listener
+        # resyncs the label/score views after any undo/redo, since a
+        # settings command may have changed them out from under the
+        # inspector -- cheaper than teaching each command about widgets.
         self._undo_stack = UndoStack()
+        self._undo_stack.add_listener(self._sync_project_config_views)
 
         self.setWindowTitle(f"Video Annotation Tool — {project.config.project_dir}")
         self.resize(1280, 800)
@@ -518,12 +520,30 @@ class MainWindow(QMainWindow):
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
-        self.project.break_continuation(rel, cut_id)
-        self._refresh_cuts_and_status(rel)
-        self.inspector_panel.select_cut_by_id(cut_id)
-        # Breaking a front half's link removes the pending-continuation
-        # banner the *next* video would otherwise show for it.
-        self._refresh_pending_continuation()
+        old_cut = self.project.find_cut(rel, cut_id)
+        if old_cut is None:
+            return
+        self._apply_continuation(rel, cut_id, None, False)
+        old_id, old_forward = old_cut.continuation_id, old_cut.continues_forward
+        self._undo_stack.push(Command(
+            undo=lambda: self._apply_continuation(rel, cut_id, old_id, old_forward),
+            redo=lambda: self._apply_continuation(rel, cut_id, None, False),
+        ))
+
+    def _apply_continuation(
+        self, rel: str, cut_id: str, continuation_id: str | None, continues_forward: bool,
+        end: float | None = None,
+    ) -> None:
+        """Set a cut's link fields and resync -- shared by break/link and
+        their undo/redo. Linking or breaking a front half changes the
+        pending-continuation banner the *next* video would show for it,
+        hence the refresh.
+        """
+        self.project.set_continuation(rel, cut_id, continuation_id, continues_forward, end)
+        if self._current_video_path and self.project.rel_path(self._current_video_path) == rel:
+            self._refresh_cuts_and_status(rel)
+            self.inspector_panel.select_cut_by_id(cut_id)
+            self._refresh_pending_continuation()
 
     def _on_seek_to_cut(self, cut_id: str) -> None:
         if self._current_video_path is None:
@@ -580,18 +600,29 @@ class MainWindow(QMainWindow):
         app_settings.save_last_project_dir(self.project.config.project_dir)
 
     def _on_open_project_settings(self, initial_tab: str = "labels") -> None:
-        dialog = ProjectSettingsDialog(self.project, self, initial_tab=initial_tab)
+        dialog = ProjectSettingsDialog(self.project, self, initial_tab=initial_tab, undo_stack=self._undo_stack)
         dialog.exec()
-        # Labels and scores are both on this one dialog now, so refresh
-        # both regardless of which tab was opened -- either could have
-        # been edited during the same session.
+        self._sync_project_config_views()
+
+    def _sync_project_config_views(self) -> None:
+        """Push the project's current label set / score definitions into
+        every view that mirrors them. Called after the settings dialog
+        closes (labels and scores are both on it, so refresh both
+        regardless of which tab was opened) and after any undo/redo, since
+        a settings command may just have changed either.
+        """
         self.inspector_panel.set_labels(self.project.config.labels)
         self.inspector_panel.set_score_definitions(
             self.project.config.scoring_enabled, self.project.config.score_definitions
         )
         self._register_label_shortcuts()
         if self._current_video_path:
+            # Rebuilding the cuts list drops its selection; keep whatever
+            # was selected (e.g. the cut an undo/redo just acted on).
+            selected = self.inspector_panel.selected_cut_id()
             self._refresh_cuts_and_status(self.project.rel_path(self._current_video_path))
+            if selected:
+                self.inspector_panel.select_cut_by_id(selected)
 
     def _on_new_project(self) -> None:
         from vat.ui.project_dialog import NewProjectDialog

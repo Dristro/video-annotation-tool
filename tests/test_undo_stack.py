@@ -80,3 +80,20 @@ def test_multiple_undo_redo_round_trip_in_order() -> None:
     stack.redo()
 
     assert log == ["undo-b", "undo-a", "redo-a", "redo-b"]
+
+
+def test_listeners_fire_after_undo_and_redo_but_not_on_push() -> None:
+    from vat.project.undo_stack import Command, UndoStack
+
+    stack = UndoStack()
+    fired = []
+    stack.add_listener(lambda: fired.append("x"))
+
+    stack.push(Command(undo=lambda: None, redo=lambda: None))
+    assert fired == []
+    stack.undo()
+    assert fired == ["x"]
+    stack.redo()
+    assert fired == ["x", "x"]
+    stack.redo()  # nothing to redo: no notification either
+    assert fired == ["x", "x"]

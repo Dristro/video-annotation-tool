@@ -104,6 +104,17 @@ class ProjectStore:
         self.config.labels = [l for l in self.config.labels if l.name not in name_set]
         self.save()
 
+    def insert_label(self, label: Label, index: int) -> Label:
+        """Re-insert an existing Label object at a given position -- used
+        by undo (of a remove) / redo (of an add) so the label set's order
+        is restored exactly rather than the label landing at the end.
+        """
+        if self.config.find_label(label.name) is not None:
+            raise DuplicateLabelError(f"Label '{label.name}' already exists")
+        self.config.labels.insert(max(0, min(index, len(self.config.labels))), label)
+        self.save()
+        return label
+
     def rename_label(
         self,
         old_name: str,
@@ -145,6 +156,15 @@ class ProjectStore:
         name_set = set(names)
         self.config.score_definitions = [d for d in self.config.score_definitions if d.name not in name_set]
         self.save()
+
+    def insert_score_definition(self, definition: ScoreDefinition, index: int) -> ScoreDefinition:
+        """Order-preserving re-insert, same purpose as insert_label()."""
+        if self.config.find_score_definition(definition.name) is not None:
+            raise DuplicateScoreDefinitionError(f"Score '{definition.name}' already exists")
+        index = max(0, min(index, len(self.config.score_definitions)))
+        self.config.score_definitions.insert(index, definition)
+        self.save()
+        return definition
 
     def rename_score_definition(
         self,

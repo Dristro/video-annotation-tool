@@ -202,3 +202,24 @@ def test_scores_persist_and_reload(tmp_project_dir) -> None:
 
     reloaded = AnnotationStore.load(tmp_project_dir)
     assert reloaded.get_entry("a.mp4").cuts[0].scores == {"Technique": 87.5}
+
+
+def test_set_continuation_overwrites_link_fields_and_optionally_end(tmp_project_dir) -> None:
+    from vat.annotations.annotation_store import AnnotationStore
+    from vat.models.cut import Cut
+
+    store = AnnotationStore.create(tmp_project_dir)
+    cut = store.add_cut("a.mp4", Cut(start=1.0, end=2.0, label="goal", scores={"T": 1.0}, justification="j"))
+
+    linked = store.set_continuation("a.mp4", cut.id, "link1", True, end=99.0)
+    assert (linked.continuation_id, linked.continues_forward, linked.end) == ("link1", True, 99.0)
+    assert (linked.label, linked.scores, linked.justification, linked.start) == ("goal", {"T": 1.0}, "j", 1.0)
+
+    relinked = store.set_continuation("a.mp4", cut.id, "link2", False)
+    assert (relinked.continuation_id, relinked.continues_forward, relinked.end) == ("link2", False, 99.0)
+
+    broken = store.break_continuation("a.mp4", cut.id)
+    assert (broken.continuation_id, broken.continues_forward) == (None, False)
+
+    reloaded = AnnotationStore.load(tmp_project_dir)
+    assert reloaded.get_entry("a.mp4").cuts[0].end == 99.0

@@ -100,6 +100,18 @@ class Project:
     def break_continuation(self, rel_path: str, cut_id: str) -> Cut:
         return self.annotation_store.break_continuation(rel_path, cut_id)
 
+    def set_continuation(
+        self, rel_path: str, cut_id: str, continuation_id: str | None, continues_forward: bool,
+        end: float | None = None,
+    ) -> Cut:
+        return self.annotation_store.set_continuation(rel_path, cut_id, continuation_id, continues_forward, end)
+
+    def find_cut(self, rel_path: str, cut_id: str) -> Cut | None:
+        entry = self.get_entry(rel_path)
+        if entry is None:
+            return None
+        return next((c for c in entry.cuts if c.id == cut_id), None)
+
     def is_cut_complete(self, cut: Cut) -> bool:
         """True unless scoring is enabled and the cut is missing a value for
         one of the project's *current* score definitions. Cuts created
@@ -173,6 +185,12 @@ class Project:
     def remove_labels(self, names: list[str]) -> None:
         self.project_store.remove_labels(names)
 
+    def restore_label(self, label: Label, index: int) -> Label:
+        return self.project_store.insert_label(label, index)
+
+    def label_index(self, name: str) -> int:
+        return self.config.label_names().index(name)
+
     def rename_label(
         self,
         old_name: str,
@@ -197,6 +215,12 @@ class Project:
 
     def remove_score_definitions(self, names: list[str]) -> None:
         self.project_store.remove_score_definitions(names)
+
+    def restore_score_definition(self, definition: ScoreDefinition, index: int) -> ScoreDefinition:
+        return self.project_store.insert_score_definition(definition, index)
+
+    def score_definition_index(self, name: str) -> int:
+        return self.config.score_definition_names().index(name)
 
     def rename_score_definition(
         self,

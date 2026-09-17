@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 from vat.errors import DuplicateScoreDefinitionError, ScoreDefinitionNotFoundError
 from vat.models.score_definition import DTYPE_FLOAT, DTYPE_INT, VALID_DTYPES
 from vat.project.project import Project
+from vat.project.undo_stack import Command, UndoStack
 
 _COLUMNS = ["Name", "Description", "Min", "Max", "Type"]
 _SPIN_RANGE = 1_000_000_000
@@ -104,9 +105,10 @@ class _ScoresWidget(QWidget):
     ProjectSettingsDialog.
     """
 
-    def __init__(self, project: Project, parent: Self | None=None) -> None:
+    def __init__(self, project: Project, parent: Self | None=None, undo_stack: UndoStack | None = None) -> None:
         super().__init__(parent)
         self._project = project
+        self._undo_stack = undo_stack  # same contract as _LabelsWidget's
 
         layout = QVBoxLayout(self)
 
@@ -144,7 +146,18 @@ class _ScoresWidget(QWidget):
         self._refresh()
 
     def _on_toggle_enabled(self, checked: bool) -> None:
-        self._project.set_scoring_enabled(checked)
+        if checked == self._project.config.scoring_enabled:
+            return
+        project = self._project
+        project.set_scoring_enabled(checked)
+        self._push(
+            undo=lambda: project.set_scoring_enabled(not checked),
+            redo=lambda: project.set_scoring_enabled(checked),
+        )
+
+    def _push(self, undo, redo) -> None:
+        if self._undo_stack is not None:
+            self._undo_stack.push(Command(undo=undo, redo=redo))
 
     def _refresh(self) -> None:
         definitions = self._project.config.score_definitions
@@ -174,10 +187,15 @@ class _ScoresWidget(QWidget):
             if not name:
                 return
             try:
-                self._project.add_score_definition(name, minimum, maximum, dtype, description)
+                definition = self._project.add_score_definition(name, minimum, maximum, dtype, description)
             except (DuplicateScoreDefinitionError, ValueError) as exc:
                 QMessageBox.warning(self, "Cannot Add Score", str(exc))
                 return
+            project, index = self._project, self._project.score_definition_index(definition.name)
+            self._push(
+                undo=lambda: project.remove_score_definitions([definition.name]),
+                redo=lambda: project.restore_score_definition(definition, index),
+            )
             self._refresh()
 
     def _on_edit(self) -> None:
@@ -196,11 +214,23 @@ class _ScoresWidget(QWidget):
             new_name, new_description, minimum, maximum, dtype = dialog.values()
             if not new_name:
                 return
+            old = definition  # rename builds a new object, so this stays the pre-edit snapshot
             try:
-                self._project.rename_score_definition(old_name, new_name, minimum, maximum, dtype, new_description)
+                renamed = self._project.rename_score_definition(
+                    old_name, new_name, minimum, maximum, dtype, new_description
+                )
             except (DuplicateScoreDefinitionError, ScoreDefinitionNotFoundError, ValueError) as exc:
                 QMessageBox.warning(self, "Cannot Edit Score", str(exc))
                 return
+            project, saved_name = self._project, renamed.name
+            self._push(
+                undo=lambda: project.rename_score_definition(
+                    saved_name, old.name, old.minimum, old.maximum, old.dtype, old.description
+                ),
+                redo=lambda: project.rename_score_definition(
+                    old.name, saved_name, minimum, maximum, dtype, new_description
+                ),
+            )
             self._refresh()
 
     def _on_remove(self) -> None:
@@ -215,7 +245,14 @@ class _ScoresWidget(QWidget):
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
-        self._project.remove_score_definitions(names)
+        project = self._project
+        removed = [(project.score_definition_index(n), project.config.find_score_definition(n)) for n in names]
+        removed = sorted((i, d) for i, d in removed if d is not None)
+        project.remove_score_definitions(names)
+        self._push(
+            undo=lambda: [project.restore_score_definition(defn, index) for index, defn in removed],
+            redo=lambda: project.remove_score_definitions(names),
+        )
         self._refresh()
 
 

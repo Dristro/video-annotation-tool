@@ -906,3 +906,53 @@ def test_include_subfolders_menu_action_toggles_project_setting(window) -> None:
     assert window.project.config.recursive_scan is True
     assert window.playlist_panel._rel_paths_by_row == ["sub/n.mp4"]
     assert Project.open(window.project.config.project_dir).config.recursive_scan is True
+
+
+def test_break_continuation_is_undoable(window, monkeypatch) -> None:
+    window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal", continuation_id="link1", continues_forward=True)
+    window._refresh_cuts_and_status("a.mp4")
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
+
+    window._on_break_continuation(cut.id)
+    assert window.project.find_cut("a.mp4", cut.id).continuation_id is None
+
+    window._on_undo()
+    restored = window.project.find_cut("a.mp4", cut.id)
+    assert (restored.continuation_id, restored.continues_forward) == ("link1", True)
+    assert window.inspector_panel.selected_cut_id() == cut.id
+
+    window._on_redo()
+    assert window.project.find_cut("a.mp4", cut.id).continuation_id is None
+
+
+def test_undo_of_a_settings_rename_resyncs_the_inspector(window, monkeypatch) -> None:
+    from PySide6.QtWidgets import QDialog
+
+    from vat.ui import label_editor_dialog
+    from vat.ui.project_settings_dialog import ProjectSettingsDialog
+
+    window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    window.project.add_cut("a.mp4", 1.0, 2.0, "goal")
+    window._refresh_cuts_and_status("a.mp4")
+
+    # Drive the real dialog flow: exec() renames via the labels tab, then returns.
+    def _fake_exec(dialog) -> int:
+        dialog.labels_widget._table.selectRow(0)
+        dialog.labels_widget._on_edit()
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(ProjectSettingsDialog, "exec", _fake_exec)
+    monkeypatch.setattr(label_editor_dialog._LabelFormDialog, "exec", lambda self: QDialog.DialogCode.Accepted)
+    monkeypatch.setattr(label_editor_dialog._LabelFormDialog, "values", lambda self: ("score", "", "g"))
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
+
+    window._on_open_project_settings()
+    assert window.inspector_panel._label_combo.itemText(0).startswith("score")
+    assert window.project.get_entry("a.mp4").cuts[0].label == "score"
+
+    window._on_undo()
+    assert window.project.config.label_names() == ["goal"]
+    assert window.inspector_panel._label_combo.itemText(0).startswith("goal")  # listener resynced the combo
+    assert window.project.get_entry("a.mp4").cuts[0].label == "goal"
+    assert "goal" in window.inspector_panel._cuts_list.item(0).text()

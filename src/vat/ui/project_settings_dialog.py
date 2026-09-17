@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QTabWidget, QVBoxLayout
 
 from vat.project.project import Project
+from vat.project.undo_stack import UndoStack
 from vat.ui.label_editor_dialog import _LabelsWidget
 from vat.ui.score_editor_dialog import _ScoresWidget
 
@@ -19,15 +20,17 @@ class ProjectSettingsDialog(QDialog):
     with add/edit/remove/rename) and now share one dialog.
     """
 
-    def __init__(self, project: Project, parent=None, initial_tab: str = "labels") -> None:
+    def __init__(
+        self, project: Project, parent=None, initial_tab: str = "labels", undo_stack: UndoStack | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Project Settings")
         self.resize(560, 420)
 
         layout = QVBoxLayout(self)
         self._tabs = QTabWidget()
-        self.labels_widget = _LabelsWidget(project, self)
-        self.scores_widget = _ScoresWidget(project, self)
+        self.labels_widget = _LabelsWidget(project, self, undo_stack=undo_stack)
+        self.scores_widget = _ScoresWidget(project, self, undo_stack=undo_stack)
         self._tabs.addTab(self.labels_widget, "Labels")
         self._tabs.addTab(self.scores_widget, "Scores")
         self._tabs.setCurrentIndex(1 if initial_tab == "scores" else 0)

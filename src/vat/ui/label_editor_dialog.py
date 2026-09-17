@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from vat.errors import DuplicateLabelError, LabelNotFoundError
 from vat.project.project import Project
+from vat.project.undo_stack import Command, UndoStack
 from vat.ui.widgets import SingleStrokeKeySequenceEdit
 
 _COLUMNS = ["#", "Name", "Description", "Shortcut"]
@@ -151,9 +152,15 @@ class _LabelsWidget(QWidget):
     only the surrounding chrome (window title, Close button) differs.
     """
 
-    def __init__(self, project: Project, parent: Self | None=None) -> None:
+    def __init__(self, project: Project, parent: Self | None=None, undo_stack: UndoStack | None = None) -> None:
         super().__init__(parent)
         self._project = project
+        # Optional: when given (MainWindow passes its own), every mutation
+        # made here is pushed as a reversible Command. The closures only
+        # touch `project`, never this widget -- the dialog is long gone by
+        # the time Undo is pressed; MainWindow's stack listener resyncs
+        # the inspector/shortcuts afterwards.
+        self._undo_stack = undo_stack
 
         layout = QVBoxLayout(self)
         self._table = QTableWidget(0, len(_COLUMNS))
@@ -251,10 +258,15 @@ class _LabelsWidget(QWidget):
             if not name:
                 return
             try:
-                self._project.add_label(name, shortcut, description)
+                label = self._project.add_label(name, shortcut, description)
             except DuplicateLabelError as exc:
                 QMessageBox.warning(self, "Duplicate Label", str(exc))
                 return
+            project, index = self._project, self._project.label_index(label.name)
+            self._push(
+                undo=lambda: project.remove_labels([label.name]),
+                redo=lambda: project.restore_label(label, index),
+            )
             self._warn_if_shortcut_collides(shortcut, excluding_name=name)
             self._refresh()
 
@@ -271,11 +283,22 @@ class _LabelsWidget(QWidget):
             new_name, new_description, new_shortcut = dialog.values()
             if not new_name:
                 return
+            # rename_label() mutates the Label in place, so snapshot the
+            # old values first -- the undo is a plain reverse rename, which
+            # is exact: by the time it runs, every later command has
+            # already been undone, so the only cuts carrying `new_name` are
+            # the ones this rename gave it to.
+            old_shortcut, old_description = label.shortcut, label.description
             try:
-                self._project.rename_label(old_name, new_name, new_shortcut, new_description)
+                renamed = self._project.rename_label(old_name, new_name, new_shortcut, new_description)
             except (DuplicateLabelError, LabelNotFoundError) as exc:
                 QMessageBox.warning(self, "Cannot Edit Label", str(exc))
                 return
+            project, saved_name = self._project, renamed.name
+            self._push(
+                undo=lambda: project.rename_label(saved_name, old_name, old_shortcut, old_description),
+                redo=lambda: project.rename_label(old_name, saved_name, new_shortcut, new_description),
+            )
             self._warn_if_shortcut_collides(new_shortcut, excluding_name=new_name)
             self._refresh()
 
@@ -291,8 +314,19 @@ class _LabelsWidget(QWidget):
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
-        self._project.remove_labels(names)
+        project = self._project
+        removed = [(project.label_index(name), project.config.find_label(name)) for name in names]
+        removed = sorted((i, l) for i, l in removed if l is not None)
+        project.remove_labels(names)
+        self._push(
+            undo=lambda: [project.restore_label(label, index) for index, label in removed],
+            redo=lambda: project.remove_labels(names),
+        )
         self._refresh()
+
+    def _push(self, undo, redo) -> None:
+        if self._undo_stack is not None:
+            self._undo_stack.push(Command(undo=undo, redo=redo))
 
 
 class LabelEditorDialog(QDialog):

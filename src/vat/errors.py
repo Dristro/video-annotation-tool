@@ -32,3 +32,20 @@ class ScoreDefinitionNotFoundError(ProjectError):
 
 class CutNotFoundError(ProjectError):
     """Raised when referencing a cut id that doesn't exist for a video."""
+
+
+class SchemaError(ProjectError):
+    """Base class for project.json / annotations.json schema problems."""
+
+
+class SchemaTooNewError(SchemaError):
+    """Raised when a file was written by a newer version of the app than
+    this one knows how to read. Deliberately not silently "best-effort"
+    loaded: a newer schema may carry fields whose absence changes meaning,
+    and rewriting the file from this version would destroy them.
+    """
+
+
+class MigrationError(SchemaError):
+    """Raised when no migration path exists from a file's schema version
+    to the current one (a gap in the migration registry)."""

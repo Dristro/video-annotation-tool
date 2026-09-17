@@ -217,3 +217,30 @@ def test_next_and_previous_path(qapp) -> None:
     panel.select_relative(1)
     assert panel.previous_path() == "/videos/b.mp4"
     assert panel.next_path() is None  # nothing after the last video
+
+
+def test_visible_rows_emitted_after_rebuild_and_on_scroll(qapp) -> None:
+    panel = PlaylistPanel()
+    panel.resize(300, 120)
+    panel.show()  # offscreen platform: gives the list a real viewport size without a display
+    seen = []
+    panel.visible_rows_changed.connect(lambda rels: seen.append(list(rels)))
+
+    panel.set_videos(_videos(*[f"v{i:02d}.mp4" for i in range(60)]), {})
+    qapp.processEvents()
+
+    assert seen, "set_videos() must report the visible range"
+    first = seen[-1]
+    assert first[0] == "v00.mp4"
+    assert len(first) < 60  # only what fits in the viewport, not every row
+
+    panel._list.verticalScrollBar().setValue(panel._list.verticalScrollBar().maximum())
+    qapp.processEvents()
+    assert seen[-1][-1] == "v59.mp4"
+    assert seen[-1] != first
+    panel.close()
+
+
+def test_visible_rows_empty_when_no_videos(qapp) -> None:
+    panel = PlaylistPanel()
+    assert panel.visible_rel_paths() == []

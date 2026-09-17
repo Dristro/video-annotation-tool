@@ -192,3 +192,90 @@ def test_every_queued_video_is_reported_even_beyond_the_pool_size(qapp, tmp_path
 
     assert _run_event_loop_until(qapp, lambda: len(results) == 20)
     assert sorted(results) == sorted(v.rel_path for v in videos)
+
+
+def test_failed_extraction_is_retried_once_its_delay_has_elapsed(qapp, tmp_path, monkeypatch) -> None:
+    # A transient failure (drive briefly unmounted, file still copying in)
+    # must heal within the session -- but only after a delay, never on the
+    # very next refresh_playlist() call.
+    cache_dir = tmp_path / "cache"
+    video = VideoInfo(path=str(tmp_path / "t.mp4"), rel_path="t.mp4")
+    attempts = []
+    outcomes = iter([None, "/fake/thumb.jpg"])
+    monkeypatch.setattr(
+        thumbnail_loader_module, "get_or_create_thumbnail",
+        lambda path, cache_dir: attempts.append(path) or next(outcomes),
+    )
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(thumbnail_loader_module, "_now", lambda: clock["now"])
+
+    loader = ThumbnailLoader()
+    results = []
+    loader.loaded.connect(lambda rel, path: results.append((rel, path)))
+
+    loader.load_missing([video], str(cache_dir))
+    assert _run_event_loop_until(qapp, lambda: len(results) == 1)
+    assert results == [("t.mp4", "")]
+
+    loader.load_missing([video], str(cache_dir))  # too soon: not retried
+    _run_event_loop_until(qapp, lambda: len(attempts) > 1, timeout_ms=200)
+    assert attempts == [video.path]
+
+    clock["now"] += thumbnail_loader_module.RETRY_DELAYS_SECONDS[0] + 1
+    loader.load_missing([video], str(cache_dir))
+    assert _run_event_loop_until(qapp, lambda: len(results) == 2)
+    assert results[1] == ("t.mp4", "/fake/thumb.jpg")
+
+    loader.load_missing([video], str(cache_dir))  # succeeded: never looked at again
+    _run_event_loop_until(qapp, lambda: len(attempts) > 2, timeout_ms=200)
+    assert attempts == [video.path, video.path]
+
+
+def test_permanent_failure_is_given_up_on_after_the_retry_budget(qapp, tmp_path, monkeypatch) -> None:
+    cache_dir = tmp_path / "cache"
+    video = VideoInfo(path=str(tmp_path / "p.mp4"), rel_path="p.mp4")
+    attempts = []
+    monkeypatch.setattr(
+        thumbnail_loader_module, "get_or_create_thumbnail", lambda path, cache_dir: attempts.append(path) or None,
+    )
+    clock = {"now": 0.0}
+    monkeypatch.setattr(thumbnail_loader_module, "_now", lambda: clock["now"])
+
+    loader = ThumbnailLoader()
+    results = []
+    loader.loaded.connect(lambda rel, path: results.append(path))
+
+    budget = len(thumbnail_loader_module.RETRY_DELAYS_SECONDS)
+    for i in range(budget + 3):
+        loader.load_missing([video], str(cache_dir))
+        _run_event_loop_until(qapp, lambda: len(results) == min(i + 1, budget + 1), timeout_ms=1000)
+        clock["now"] += 10_000.0  # well past any delay
+
+    assert len(attempts) == budget + 1  # the initial try plus every retry, then nothing
+
+
+def test_prioritize_moves_visible_rows_to_the_front_of_the_queue(qapp, tmp_path, monkeypatch) -> None:
+    import threading
+
+    cache_dir = tmp_path / "cache"
+    videos = [VideoInfo(path=str(tmp_path / f"v{i}.mp4"), rel_path=f"v{i}.mp4") for i in range(6)]
+    release = threading.Event()
+    order = []
+
+    def _extract(path, cache_dir) -> str:
+        order.append(path)
+        release.wait(5)
+        return "/fake/thumb.jpg"
+
+    monkeypatch.setattr(thumbnail_loader_module, "get_or_create_thumbnail", _extract)
+
+    loader = ThumbnailLoader(max_workers=1)
+    loader.load_missing(videos, str(cache_dir))
+    try:
+        assert _run_event_loop_until(qapp, lambda: len(order) == 1, timeout_ms=2000)  # v0 in flight
+        loader.prioritize(["v4.mp4", "v5.mp4"])
+        assert loader.pending_rel_paths() == ["v4.mp4", "v5.mp4", "v1.mp4", "v2.mp4", "v3.mp4"]
+        loader.prioritize(["unknown.mp4"])  # ignored, order preserved
+        assert loader.pending_rel_paths() == ["v4.mp4", "v5.mp4", "v1.mp4", "v2.mp4", "v3.mp4"]
+    finally:
+        release.set()

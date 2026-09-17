@@ -156,6 +156,7 @@ class MainWindow(QMainWindow):
     def _wire_signals(self) -> None:
         self.playlist_panel.video_selected.connect(self._on_video_selected)
         self.playlist_panel.change_videos_dir_requested.connect(self._on_change_videos_dir)
+        self.playlist_panel.visible_rows_changed.connect(self._thumbnail_loader.prioritize)
 
         self.video_panel.position_changed.connect(self.timeline_widget.set_position)
         self.video_panel.duration_changed.connect(self.timeline_widget.set_duration)

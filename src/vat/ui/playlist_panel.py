@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtCore import QPoint, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import QAbstractItemView, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget
 
@@ -21,6 +21,10 @@ class PlaylistPanel(QWidget):
 
     video_selected = Signal(str)  # emits an absolute video path
     change_videos_dir_requested = Signal()
+    # rel_paths of the rows currently on screen, top to bottom -- emitted on
+    # scroll and after every rebuild so ThumbnailLoader can extract what
+    # the user is actually looking at first (see its prioritize()).
+    visible_rows_changed = Signal(list)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -46,6 +50,7 @@ class PlaylistPanel(QWidget):
         self._list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._list.setIconSize(THUMBNAIL_ICON_SIZE)
         self._list.currentRowChanged.connect(self._on_row_changed)
+        self._list.verticalScrollBar().valueChanged.connect(lambda _value: self._emit_visible_rows())
         layout.addWidget(self._list)
 
     def set_videos(
@@ -103,6 +108,28 @@ class PlaylistPanel(QWidget):
         new_path = self.current_path()
         if new_path is not None and new_path != previous_path:
             self.video_selected.emit(new_path)
+        self._emit_visible_rows()
+
+    def visible_rel_paths(self) -> list[str]:
+        """rel_paths of the rows currently within the list's viewport, top
+        to bottom. Walks down from the first visible row and stops at the
+        first one past the viewport, so it's O(visible), not O(rows).
+        """
+        if not self._rel_paths_by_row:
+            return []
+        first = self._list.indexAt(QPoint(0, 0)).row()
+        if first < 0:
+            return []
+        viewport = self._list.viewport().rect()
+        visible = []
+        for row in range(first, len(self._rel_paths_by_row)):
+            if not self._list.visualItemRect(self._list.item(row)).intersects(viewport):
+                break
+            visible.append(self._rel_paths_by_row[row])
+        return visible
+
+    def _emit_visible_rows(self) -> None:
+        self.visible_rows_changed.emit(self.visible_rel_paths())
 
     def set_thumbnail(self, rel_path: str, thumbnail_path: str) -> None:
         """Set a single row's icon in place, without rebuilding the list --

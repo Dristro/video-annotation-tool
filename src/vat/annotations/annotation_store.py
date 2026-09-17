@@ -7,6 +7,7 @@ from vat.constants import ANNOTATIONS_FILENAME
 from vat.models.cut import Cut
 from vat.models.video_entry import VideoEntry
 from vat.errors import CutNotFoundError
+from vat.migrations import ANNOTATION_MIGRATIONS, upgrade
 
 SCHEMA_VERSION = 1
 
@@ -35,11 +36,15 @@ class AnnotationStore:
         if not path.exists():
             return cls.create(project_dir)
         data = json.loads(path.read_text())
+        data, migrated = upgrade(data, path, SCHEMA_VERSION, ANNOTATION_MIGRATIONS, "annotations file")
         videos = {
             rel_path: VideoEntry.from_dict(entry_data)
             for rel_path, entry_data in data.get("videos", {}).items()
         }
-        return cls(path, videos)
+        store = cls(path, videos)
+        if migrated:
+            store.save()  # rewrite at the current schema version, exactly once
+        return store
 
     def save(self) -> None:
         payload = {

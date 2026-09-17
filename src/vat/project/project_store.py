@@ -5,8 +5,9 @@ import shutil
 from pathlib import Path
 
 from vat.constants import PROJECT_CONFIG_FILENAME
+from vat.migrations import PROJECT_MIGRATIONS, upgrade
 from vat.models.label import Label
-from vat.models.project_config import ProjectConfig
+from vat.models.project_config import SCHEMA_VERSION, ProjectConfig
 from vat.models.score_definition import ScoreDefinition
 from vat.errors import (
     DuplicateLabelError,
@@ -54,8 +55,12 @@ class ProjectStore:
         if not config_path.exists():
             raise ProjectNotFoundError(f"No project.json found in {project_dir}")
         data = json.loads(config_path.read_text())
+        data, migrated = upgrade(data, config_path, SCHEMA_VERSION, PROJECT_MIGRATIONS, "project")
         config = ProjectConfig.from_dict(data)
-        return cls(config)
+        store = cls(config)
+        if migrated:
+            store.save()  # rewrite at the current schema version, exactly once
+        return store
 
     def save(self) -> None:
         self.config.touch()

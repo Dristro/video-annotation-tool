@@ -27,3 +27,27 @@ def test_apply_dark_theme_keeps_text_readable(qapp) -> None:
     text_color = qapp.palette().color(QPalette.ColorRole.WindowText)
     window_color = qapp.palette().color(QPalette.ColorRole.Window)
     assert text_color.lightness() > window_color.lightness()
+
+
+def test_version_flag_prints_version_and_exits(capsys) -> None:
+    from vat import __version__
+    from vat.app import _parse_args
+
+    with pytest.raises(SystemExit) as excinfo:
+        _parse_args(["--version"])
+    assert excinfo.value.code == 0
+    assert __version__ in capsys.readouterr().out
+
+
+def test_unknown_finder_style_args_are_ignored() -> None:
+    from vat.app import _parse_args
+
+    args = _parse_args(["-psn_0_12345", "/some/project"])
+    assert args.project_dir == "/some/project"
+
+
+def test_version_matches_pyproject_dynamic_source() -> None:
+    from vat import __version__
+
+    assert __version__.count(".") == 2
+    assert all(part.isdigit() for part in __version__.split("."))

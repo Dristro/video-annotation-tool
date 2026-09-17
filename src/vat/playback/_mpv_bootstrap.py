@@ -33,6 +33,28 @@ DYLD_LIBRARY_PATH = "DYLD_LIBRARY_PATH"
 _bootstrapped = False
 _lib_dir: str | None = None
 
+# Where Homebrew puts libmpv on Apple Silicon and on Intel Macs, in that
+# order. Shared with `locate_libmpv()` so the startup dependency check
+# (vat/runtime_deps.py) and the actual loader can't disagree about where
+# to look.
+KNOWN_LIB_DIRS = ("/opt/homebrew/lib", "/usr/local/lib")
+
+
+def locate_libmpv() -> str | None:
+    """Path to a libmpv the process could load, or None. Does *not* load
+    it -- this is what the startup dependency check calls so a missing
+    `brew install mpv` can be reported in a dialog instead of surfacing as
+    an ImportError from deep inside python-mpv.
+    """
+    found = ctypes.util.find_library("mpv")
+    if found is not None:
+        return found
+    for lib_dir in KNOWN_LIB_DIRS:
+        candidate = os.path.join(lib_dir, "libmpv.dylib")
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
 
 def ensure_libmpv_loadable() -> None:
     global _bootstrapped, _lib_dir
@@ -43,7 +65,7 @@ def ensure_libmpv_loadable() -> None:
     if ctypes.util.find_library("mpv") is not None:
         return  # already discoverable and (presumably) loadable as-is
 
-    for lib_dir in ("/opt/homebrew/lib", "/usr/local/lib"):
+    for lib_dir in KNOWN_LIB_DIRS:
         candidate = os.path.join(lib_dir, "libmpv.dylib")
         if os.path.exists(candidate):
             ctypes.CDLL(candidate, mode=os.RTLD_LAZY | os.RTLD_GLOBAL)

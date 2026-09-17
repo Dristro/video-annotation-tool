@@ -4,6 +4,8 @@ import hashlib
 import subprocess
 from pathlib import Path
 
+from vat.media.tools import tool_path
+
 THUMBNAIL_WIDTH = 120
 THUMBNAIL_TIMESTAMP_SECONDS = 1.0
 
@@ -30,7 +32,7 @@ def get_or_create_thumbnail(video_path: str, cache_dir: str) -> str | None:
     try:
         subprocess.run(
             [
-                "ffmpeg", "-y",
+                tool_path("ffmpeg"), "-y",
                 "-ss", str(THUMBNAIL_TIMESTAMP_SECONDS),
                 "-i", video_path,
                 "-frames:v", "1",

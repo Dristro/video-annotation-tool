@@ -6,6 +6,8 @@ import struct
 import subprocess
 from pathlib import Path
 
+from vat.media.tools import tool_path
+
 # ffmpeg decodes the audio track down to this coarse a mono sample rate --
 # not the final resolution shown, just cheap enough to decode and pipe
 # through stdout without pulling the whole track into memory at full rate.
@@ -51,7 +53,7 @@ def _extract_peaks(video_path: str) -> list[float] | None:
     try:
         result = subprocess.run(
             [
-                "ffmpeg", "-v", "error", "-i", video_path,
+                tool_path("ffmpeg"), "-v", "error", "-i", video_path,
                 "-vn", "-ac", "1", "-ar", str(DECODE_SAMPLE_RATE_HZ),
                 "-f", "s16le", "pipe:1",
             ],

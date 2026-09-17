@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from vat.constants import SUPPORTED_VIDEO_EXTENSIONS
+from vat.media.tools import tool_path
 
 
 @dataclass
@@ -50,7 +51,7 @@ def probe_duration(video_path: str) -> float | None:
     try:
         result = subprocess.run(
             [
-                "ffprobe",
+                tool_path("ffprobe"),
                 "-v", "error",
                 "-show_entries", "format=duration",
                 "-of", "json",

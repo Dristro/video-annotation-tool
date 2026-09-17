@@ -45,13 +45,16 @@ class Project:
     def set_videos_dir(self, videos_dir: str) -> None:
         self.project_store.set_videos_dir(videos_dir)
 
+    def set_recursive_scan(self, enabled: bool) -> None:
+        self.project_store.set_recursive_scan(enabled)
+
     def move_project_dir(self, new_project_dir: str) -> None:
         self.project_store.move_project_dir(new_project_dir)
         self.annotation_store = AnnotationStore.load(self.project_store.config.project_dir)
 
     # -- Videos ------------------------------------------------------------
     def list_videos(self) -> list[VideoInfo]:
-        return list_videos(self.config.videos_dir)
+        return list_videos(self.config.videos_dir, recursive=self.config.recursive_scan)
 
     def rel_path(self, video_path: str) -> str:
         return rel_path_for(self.config.videos_dir, video_path)

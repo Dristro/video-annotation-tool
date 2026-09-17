@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,25 +17,49 @@ class VideoInfo:
     duration: float | None = None
 
 
-def list_videos(videos_dir: str) -> list[VideoInfo]:
-    """Return all supported video files directly under `videos_dir`, sorted by name.
+def list_videos(videos_dir: str, recursive: bool = False) -> list[VideoInfo]:
+    """Return all supported video files under `videos_dir`, sorted by
+    relative path (case-insensitive).
 
-    Only top-level files are scanned (a "videos directory" is treated as a flat
-    playlist source, matching the "move through all videos in dir like a
-    playlist" requirement).
+    By default only top-level files are scanned: a "videos directory" is
+    treated as a flat playlist source, matching the "move through all
+    videos in dir like a playlist" requirement. With `recursive=True`
+    subfolders are walked too (a per-project setting, see
+    `ProjectConfig.recursive_scan`); a nested video's `rel_path` is then
+    its path relative to `videos_dir` with forward slashes
+    (`"day1/cam2/clip.mp4"`), which is also the key it gets in
+    `annotations.json` -- so the same file keeps the same annotations
+    whether or not the option is on, and the file stays portable across
+    platforms. Hidden files and directories (dot-prefixed) are skipped in
+    both modes.
     """
     base = Path(videos_dir)
     if not base.is_dir():
         return []
     entries = []
-    for child in sorted(base.iterdir(), key=lambda p: p.name.lower()):
-        if child.is_file() and child.suffix.lower() in SUPPORTED_VIDEO_EXTENSIONS:
-            entries.append(VideoInfo(path=str(child), rel_path=child.name))
+    if recursive:
+        for root, dirnames, filenames in os.walk(base):
+            dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
+            for filename in filenames:
+                child = Path(root) / filename
+                if _is_video_file(child):
+                    entries.append(VideoInfo(path=str(child), rel_path=child.relative_to(base).as_posix()))
+    else:
+        for child in base.iterdir():
+            if _is_video_file(child):
+                entries.append(VideoInfo(path=str(child), rel_path=child.name))
+    entries.sort(key=lambda v: v.rel_path.lower())
     return entries
 
 
+def _is_video_file(path: Path) -> bool:
+    return path.is_file() and not path.name.startswith(".") and path.suffix.lower() in SUPPORTED_VIDEO_EXTENSIONS
+
+
 def rel_path_for(videos_dir: str, video_path: str) -> str:
-    return str(Path(video_path).resolve().relative_to(Path(videos_dir).resolve()))
+    # as_posix() so a nested video's key in annotations.json is the same
+    # on every platform (and matches list_videos()'s rel_path exactly).
+    return Path(video_path).resolve().relative_to(Path(videos_dir).resolve()).as_posix()
 
 
 _duration_cache: dict[str, float] = {}

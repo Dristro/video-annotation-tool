@@ -890,3 +890,19 @@ def test_continues_checkbox_enabled_when_not_last_video(two_video_window) -> Non
     win._on_video_selected(win.playlist_panel.current_path())  # a.mp4, has a next video
 
     assert win.inspector_panel._continues_checkbox.isEnabled() is True
+
+
+def test_include_subfolders_menu_action_toggles_project_setting(window) -> None:
+    os.mkdir(os.path.join(window.project.config.videos_dir, "sub"))
+    open(os.path.join(window.project.config.videos_dir, "sub", "n.mp4"), "wb").close()
+    window.video_panel.load = lambda path: None  # keep row-0 auto-selection away from a real player
+
+    assert window._recursive_scan_action.isChecked() is False
+    window.refresh_playlist()
+    assert window.playlist_panel._rel_paths_by_row == []
+
+    window._recursive_scan_action.setChecked(True)
+
+    assert window.project.config.recursive_scan is True
+    assert window.playlist_panel._rel_paths_by_row == ["sub/n.mp4"]
+    assert Project.open(window.project.config.project_dir).config.recursive_scan is True

@@ -218,3 +218,27 @@ def test_pending_continuation_chain_across_three_videos(tmp_project_dir, tmp_vid
     pending_for_c = project.pending_continuation("c.mp4", "b.mp4")
     assert pending_for_c is not None
     assert pending_for_c.continuation_id == "chain1"
+
+
+def test_recursive_scan_setting_persists_and_drives_listing(tmp_project_dir, tmp_videos_dir) -> None:
+    import os
+
+    nested = os.path.join(tmp_videos_dir, "sub")
+    os.mkdir(nested)
+    open(os.path.join(nested, "n.mp4"), "wb").close()
+    project = _make_project(tmp_project_dir, tmp_videos_dir)
+
+    assert project.config.recursive_scan is False
+    assert [v.rel_path for v in project.list_videos()] == ["a.mp4", "b.mp4"]
+
+    project.set_recursive_scan(True)
+    assert [v.rel_path for v in project.list_videos()] == ["a.mp4", "b.mp4", "sub/n.mp4"]
+
+    reopened = Project.open(tmp_project_dir)
+    assert reopened.config.recursive_scan is True
+
+    # Annotations for a nested video key on the posix rel_path.
+    rel = reopened.rel_path(os.path.join(nested, "n.mp4"))
+    assert rel == "sub/n.mp4"
+    reopened.add_cut(rel, 0.0, 1.0, "goal")
+    assert "sub/n.mp4" in reopened.annotation_store.videos

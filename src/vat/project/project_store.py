@@ -71,6 +71,10 @@ class ProjectStore:
         self.config.videos_dir = str(Path(videos_dir).resolve())
         self.save()
 
+    def set_recursive_scan(self, enabled: bool) -> None:
+        self.config.recursive_scan = bool(enabled)
+        self.save()
+
     def move_project_dir(self, new_project_dir: str) -> None:
         """Move the whole project directory (config + annotations + any cache) to a new path."""
         old_path = Path(self.config.project_dir).resolve()

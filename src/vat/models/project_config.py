@@ -23,6 +23,9 @@ class ProjectConfig:
     labels: list[Label] = field(default_factory=list)
     scoring_enabled: bool = False
     score_definitions: list[ScoreDefinition] = field(default_factory=list)
+    # Whether list_videos() walks subfolders of videos_dir (off by default:
+    # a flat playlist). Additive with a default, so no schema bump needed.
+    recursive_scan: bool = False
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     schema_version: int = SCHEMA_VERSION
@@ -56,6 +59,7 @@ class ProjectConfig:
             "labels": [label.to_dict() for label in self.labels],
             "scoring_enabled": self.scoring_enabled,
             "score_definitions": [defn.to_dict() for defn in self.score_definitions],
+            "recursive_scan": self.recursive_scan,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -68,6 +72,7 @@ class ProjectConfig:
             labels=[Label.from_dict(l) for l in data.get("labels", [])],
             scoring_enabled=data.get("scoring_enabled", False),
             score_definitions=[ScoreDefinition.from_dict(d) for d in data.get("score_definitions", [])],
+            recursive_scan=bool(data.get("recursive_scan", False)),
             created_at=data.get("created_at", datetime.now(timezone.utc).isoformat()),
             updated_at=data.get("updated_at", datetime.now(timezone.utc).isoformat()),
             schema_version=data.get("schema_version", SCHEMA_VERSION),

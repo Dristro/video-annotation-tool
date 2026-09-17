@@ -123,6 +123,14 @@ class MainWindow(QMainWindow):
         change_project_dir_action = file_menu.addAction("Change Project Directory…")
         change_project_dir_action.triggered.connect(self._on_change_project_dir)
 
+        self._recursive_scan_action = file_menu.addAction("Include Subfolders")
+        self._recursive_scan_action.setCheckable(True)
+        self._recursive_scan_action.setChecked(self.project.config.recursive_scan)
+        self._recursive_scan_action.setToolTip(
+            "Also list videos inside subfolders of the videos directory (as 'subfolder/name.mp4')."
+        )
+        self._recursive_scan_action.toggled.connect(self._on_toggle_recursive_scan)
+
         file_menu.addSeparator()
         quit_action = file_menu.addAction("Quit")
         quit_action.triggered.connect(self.close)
@@ -553,6 +561,12 @@ class MainWindow(QMainWindow):
             self.project.set_videos_dir(path)
             self.refresh_playlist()
 
+    def _on_toggle_recursive_scan(self, checked: bool) -> None:
+        if checked == self.project.config.recursive_scan:
+            return  # programmatic sync from _switch_project(), nothing to do
+        self.project.set_recursive_scan(checked)
+        self.refresh_playlist()
+
     def _on_change_project_dir(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Choose New Project Directory")
         if not path:
@@ -624,6 +638,7 @@ class MainWindow(QMainWindow):
         self.inspector_panel.set_score_definitions(project.config.scoring_enabled, project.config.score_definitions)
         self._register_label_shortcuts()
         self._refresh_recent_menu()
+        self._recursive_scan_action.setChecked(project.config.recursive_scan)
         self._current_video_path = None
         self.refresh_playlist()
 

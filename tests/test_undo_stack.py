@@ -97,3 +97,36 @@ def test_listeners_fire_after_undo_and_redo_but_not_on_push() -> None:
     assert fired == ["x", "x"]
     stack.redo()  # nothing to redo: no notification either
     assert fired == ["x", "x"]
+
+
+def test_descriptions_drive_undo_and_redo_text() -> None:
+    from vat.project.undo_stack import Command, UndoStack
+
+    stack = UndoStack()
+    assert (stack.undo_text(), stack.redo_text()) == ("", "")
+    stack.push(Command(undo=lambda: None, redo=lambda: None, description="Add Annotation"))
+    stack.push(Command(undo=lambda: None, redo=lambda: None, description="Mark Annotated"))
+    assert stack.undo_text() == "Mark Annotated"
+    stack.undo()
+    assert (stack.undo_text(), stack.redo_text()) == ("Add Annotation", "Mark Annotated")
+    stack.clear()
+    assert (stack.undo_text(), stack.redo_text()) == ("", "")
+    assert not stack.can_undo() and not stack.can_redo()
+
+
+def test_change_listeners_fire_on_push_undo_redo_and_clear_but_not_the_view_listeners_on_push() -> None:
+    from vat.project.undo_stack import Command, UndoStack
+
+    stack = UndoStack()
+    changes, views = [], []
+    stack.add_change_listener(lambda: changes.append("c"))
+    stack.add_listener(lambda: views.append("v"))
+
+    stack.push(Command(undo=lambda: None, redo=lambda: None))
+    assert (len(changes), len(views)) == (1, 0)
+    stack.undo()
+    assert (len(changes), len(views)) == (2, 1)
+    stack.redo()
+    assert (len(changes), len(views)) == (3, 2)
+    stack.clear()
+    assert (len(changes), len(views)) == (4, 2)

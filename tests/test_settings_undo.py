@@ -179,3 +179,26 @@ def test_settings_dialog_hands_the_stack_to_both_tabs(project) -> None:
     dialog = ProjectSettingsDialog(project, undo_stack=stack)
     assert dialog.labels_widget._undo_stack is stack
     assert dialog.scores_widget._undo_stack is stack
+
+
+def test_settings_commands_carry_descriptions(project, monkeypatch) -> None:
+    stack = UndoStack()
+    labels = _LabelsWidget(project, undo_stack=stack)
+    _accept_label_form(monkeypatch, ("corner", "", ""))
+    labels._on_add()
+    assert stack.undo_text() == "Add Label 'corner'"
+
+    _select_row(labels, 1)  # foul
+    _accept_label_form(monkeypatch, ("infraction", "", "F"))
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
+    labels._on_edit()
+    assert stack.undo_text() == "Rename Label 'foul' to 'infraction'"
+
+    scores = _ScoresWidget(project, undo_stack=stack)
+    scores._enabled_checkbox.setChecked(True)
+    assert stack.undo_text() == "Enable Scoring"
+    _select_row(scores, 0)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
+    scores._on_remove()
+    assert stack.undo_text() == "Remove Score 'Technique'"

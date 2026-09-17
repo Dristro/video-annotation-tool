@@ -14,6 +14,10 @@ class Command:
 
     undo: Callable[[], None]
     redo: Callable[[], None]
+    # Human-readable, imperative, capitalised ("Add Annotation", "Rename
+    # Label 'goal' to 'score'") -- shown in the Edit menu as
+    # "Undo <description>" / "Redo <description>".
+    description: str = ""
 
 
 class UndoStack:
@@ -33,13 +37,34 @@ class UndoStack:
         # commands stay pure Project mutations, which is what lets the
         # settings dialogs push them without holding on to MainWindow.
         self._listeners: list[Callable[[], None]] = []
+        # Called after *any* change to the stack -- push, undo, redo -- so
+        # menu text/enabled state can follow it. Kept separate from the
+        # undo/redo listeners above: a push must not trigger the (heavier)
+        # view resync those do.
+        self._change_listeners: list[Callable[[], None]] = []
 
     def add_listener(self, listener: Callable[[], None]) -> None:
         self._listeners.append(listener)
 
+    def add_change_listener(self, listener: Callable[[], None]) -> None:
+        self._change_listeners.append(listener)
+
     def push(self, command: Command) -> None:
         self._undo.append(command)
         self._redo.clear()
+        self._notify_changed()
+
+    def clear(self) -> None:
+        self._undo.clear()
+        self._redo.clear()
+        self._notify_changed()
+
+    def undo_text(self) -> str:
+        """Description of what undo() would revert, or "" when nothing."""
+        return self._undo[-1].description if self._undo else ""
+
+    def redo_text(self) -> str:
+        return self._redo[-1].description if self._redo else ""
 
     def can_undo(self) -> bool:
         return bool(self._undo)
@@ -65,4 +90,9 @@ class UndoStack:
 
     def _notify(self) -> None:
         for listener in list(self._listeners):
+            listener()
+        self._notify_changed()
+
+    def _notify_changed(self) -> None:
+        for listener in list(self._change_listeners):
             listener()

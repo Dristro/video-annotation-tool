@@ -153,11 +153,12 @@ class _ScoresWidget(QWidget):
         self._push(
             undo=lambda: project.set_scoring_enabled(not checked),
             redo=lambda: project.set_scoring_enabled(checked),
+            description="Enable Scoring" if checked else "Disable Scoring",
         )
 
-    def _push(self, undo, redo) -> None:
+    def _push(self, undo, redo, description: str) -> None:
         if self._undo_stack is not None:
-            self._undo_stack.push(Command(undo=undo, redo=redo))
+            self._undo_stack.push(Command(undo=undo, redo=redo, description=description))
 
     def _refresh(self) -> None:
         definitions = self._project.config.score_definitions
@@ -195,6 +196,7 @@ class _ScoresWidget(QWidget):
             self._push(
                 undo=lambda: project.remove_score_definitions([definition.name]),
                 redo=lambda: project.restore_score_definition(definition, index),
+                description=f"Add Score '{definition.name}'",
             )
             self._refresh()
 
@@ -230,6 +232,10 @@ class _ScoresWidget(QWidget):
                 redo=lambda: project.rename_score_definition(
                     old.name, saved_name, minimum, maximum, dtype, new_description
                 ),
+                description=(
+                    f"Rename Score '{old.name}' to '{saved_name}'" if saved_name != old.name
+                    else f"Edit Score '{old.name}'"
+                ),
             )
             self._refresh()
 
@@ -252,6 +258,7 @@ class _ScoresWidget(QWidget):
         self._push(
             undo=lambda: [project.restore_score_definition(defn, index) for index, defn in removed],
             redo=lambda: project.remove_score_definitions(names),
+            description=f"Remove Score '{names[0]}'" if len(names) == 1 else f"Remove {len(names)} Scores",
         )
         self._refresh()
 

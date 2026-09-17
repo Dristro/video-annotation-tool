@@ -1032,3 +1032,149 @@ def test_link_button_visibility_follows_selection(window) -> None:
     panel.select_cut_by_id(cut.id)
     assert panel._link_continuation_btn.isVisibleTo(panel) is True
     assert panel._break_continuation_btn.isVisibleTo(panel) is False  # nothing to break yet
+
+
+# -- Undo history in the Edit menu, and the remaining undoable actions ------
+
+def test_edit_menu_shows_what_undo_and_redo_would_do(window) -> None:
+    assert window._undo_action.text() == "Undo" and not window._undo_action.isEnabled()
+    assert window._redo_action.text() == "Redo" and not window._redo_action.isEnabled()
+
+    window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    window.inspector_panel.set_pending_in(1.0)
+    window.inspector_panel.set_pending_out(2.0)
+    window._on_add_cut("goal")
+    assert window._undo_action.text() == "Undo Add Annotation" and window._undo_action.isEnabled()
+    assert not window._redo_action.isEnabled()
+
+    window._on_undo()
+    assert window._undo_action.text() == "Undo" and not window._undo_action.isEnabled()
+    assert window._redo_action.text() == "Redo Add Annotation" and window._redo_action.isEnabled()
+
+
+def test_mark_annotated_is_undoable_and_restores_no_entry_state(window) -> None:
+    window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    assert window.project.get_entry("a.mp4") is None
+
+    window._on_set_annotated(True)
+    assert window.project.is_annotated("a.mp4") is True
+    assert window._undo_action.text() == "Undo Mark Annotated"
+
+    window._on_undo()
+    assert window.project.get_entry("a.mp4") is None  # not "in progress": exactly as before
+    window._on_redo()
+    assert window.project.is_annotated("a.mp4") is True
+
+    window._on_set_annotated(False)
+    assert window._undo_action.text() == "Undo Unmark Annotated"
+    window._on_undo()
+    assert window.project.is_annotated("a.mp4") is True
+
+
+def test_mark_annotated_undo_keeps_existing_cuts(window) -> None:
+    window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    window.project.add_cut("a.mp4", 1.0, 2.0, "goal")
+    window._on_set_annotated(True)
+    window._on_undo()
+    entry = window.project.get_entry("a.mp4")
+    assert entry is not None and entry.annotated is False and len(entry.cuts) == 1
+
+
+def test_marking_an_already_annotated_video_records_nothing(window) -> None:
+    window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    window._on_set_annotated(True)
+    window._on_set_annotated(True)
+    window._on_undo()
+    assert window.project.get_entry("a.mp4") is None
+    assert not window._undo_stack.can_undo()
+
+
+def test_include_subfolders_toggle_is_undoable_and_syncs_the_menu_check(window) -> None:
+    window.video_panel.load = lambda path: None
+    window._recursive_scan_action.setChecked(True)
+    assert window._undo_action.text() == "Undo Include Subfolders"
+
+    window._on_undo()
+    assert window.project.config.recursive_scan is False
+    assert window._recursive_scan_action.isChecked() is False
+    window._on_redo()
+    assert window.project.config.recursive_scan is True
+    assert window._recursive_scan_action.isChecked() is True
+    assert window._undo_action.text() == "Undo Include Subfolders"  # the sync didn't push a second command
+
+
+def test_change_videos_dir_is_undoable(window, tmp_path, monkeypatch) -> None:
+    from PySide6.QtWidgets import QFileDialog
+
+    window.video_panel.load = lambda path: None
+    original = window.project.config.videos_dir
+    other = tmp_path / "other_videos"
+    other.mkdir()
+    (other / "z.mp4").write_bytes(b"")
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: str(other))
+
+    window._on_change_videos_dir()
+    assert window.project.config.videos_dir == str(other.resolve())
+    assert window.playlist_panel._rel_paths_by_row == ["z.mp4"]
+    assert window._undo_action.text() == "Undo Change Videos Directory"
+
+    window._on_undo()
+    assert window.project.config.videos_dir == original
+    assert window.playlist_panel._rel_paths_by_row == []
+    window._on_redo()
+    assert window.playlist_panel._rel_paths_by_row == ["z.mp4"]
+
+
+def test_change_project_dir_is_undoable_by_moving_back(window, tmp_path, monkeypatch) -> None:
+    from PySide6.QtWidgets import QFileDialog
+
+    from vat import app_settings
+
+    monkeypatch.setattr(app_settings, "save_last_project_dir", lambda p: None)
+    original = window.project.config.project_dir
+    target = tmp_path / "moved_project"
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: str(target))
+
+    window._on_change_project_dir()
+    assert window.project.config.project_dir == str(target.resolve())
+    assert (target / "project.json").exists()
+    assert window._undo_action.text() == "Undo Change Project Directory"
+
+    window._on_undo()
+    assert window.project.config.project_dir == original
+    assert os.path.exists(os.path.join(original, "project.json"))
+    assert not (target / "project.json").exists()
+    window._on_redo()
+    assert (target / "project.json").exists()
+
+
+def test_theme_switch_is_undoable_and_syncs_the_menu_check(window, monkeypatch) -> None:
+    from vat import app_settings
+
+    saved = {}
+    monkeypatch.setattr(app_settings, "save_theme", lambda t: saved.__setitem__("theme", t))
+    monkeypatch.setattr(app_settings, "load_theme", lambda: saved.get("theme", "dark"))
+
+    window._on_set_theme("light")
+    assert saved["theme"] == "light"
+    assert window._theme_actions["light"].isChecked()
+    assert window._undo_action.text() == "Undo Switch to Light Theme"
+
+    window._on_undo()
+    assert saved["theme"] == "dark"
+    assert window._theme_actions["dark"].isChecked()
+    window._on_redo()
+    assert saved["theme"] == "light"
+
+
+def test_switching_project_clears_the_undo_stack(window, tmp_path) -> None:
+    window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    window._on_set_annotated(True)
+    assert window._undo_stack.can_undo()
+
+    videos = tmp_path / "v2"
+    videos.mkdir()
+    window._switch_project(Project.create(str(tmp_path / "p2"), str(videos)))
+
+    assert not window._undo_stack.can_undo()
+    assert window._undo_action.text() == "Undo" and not window._undo_action.isEnabled()

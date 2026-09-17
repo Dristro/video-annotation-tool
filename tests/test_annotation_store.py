@@ -223,3 +223,17 @@ def test_set_continuation_overwrites_link_fields_and_optionally_end(tmp_project_
 
     reloaded = AnnotationStore.load(tmp_project_dir)
     assert reloaded.get_entry("a.mp4").cuts[0].end == 99.0
+
+
+def test_remove_entry_if_empty_only_drops_cutless_entries(tmp_project_dir) -> None:
+    from vat.annotations.annotation_store import AnnotationStore
+    from vat.models.cut import Cut
+
+    store = AnnotationStore.create(tmp_project_dir)
+    assert store.remove_entry_if_empty("missing.mp4") is False
+    store.set_annotated("empty.mp4", True)
+    assert store.remove_entry_if_empty("empty.mp4") is True
+    assert store.get_entry("empty.mp4") is None
+    store.add_cut("full.mp4", Cut(start=0.0, end=1.0))
+    assert store.remove_entry_if_empty("full.mp4") is False
+    assert AnnotationStore.load(tmp_project_dir).get_entry("full.mp4") is not None

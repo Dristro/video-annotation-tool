@@ -370,6 +370,22 @@ Rules that make this work and are easy to break:
   label-mutating path that bypasses it.
 - add/remove restore at the original index (`Project.restore_label` /
   `restore_score_definition`) so order survives.
+- **Every `Command` carries a `description`** ("Add Annotation",
+  "Rename Label 'a' to 'b'") -- it is the Edit menu text. `UndoStack`
+  has two listener kinds: `add_listener` (after an undo/redo *executed*:
+  the heavier view resync) and `add_change_listener` (after any push/
+  undo/redo/clear: just the menu text/enabled state). Don't collapse
+  them -- a resync on every push would clear whatever the user is typing
+  into the score fields.
+- **Everything that mutates state is on the stack**, including
+  Mark/Unmark Annotated (undo of the *first* mark restores "no entry",
+  not "in progress" -- `Project.restore_annotated_state()`), directory
+  changes, the subfolder toggle and the theme. Each has an `_apply_*`
+  method that does the change + view sync and is what both the handler
+  and the command call, so the checkable menu actions are synced without
+  re-entering the handler as a new command (the handlers early-return
+  when the state already matches). `_switch_project()` clears the stack:
+  commands close over the Project they were made on.
 - Continuation changes go through `AnnotationStore.set_continuation()`
   (link fields + optional end) and `MainWindow._apply_continuation()`;
   `break_continuation` is the `(None, False)` case. The re-link dialog

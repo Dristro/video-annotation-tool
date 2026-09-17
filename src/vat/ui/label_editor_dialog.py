@@ -266,6 +266,7 @@ class _LabelsWidget(QWidget):
             self._push(
                 undo=lambda: project.remove_labels([label.name]),
                 redo=lambda: project.restore_label(label, index),
+                description=f"Add Label '{label.name}'",
             )
             self._warn_if_shortcut_collides(shortcut, excluding_name=name)
             self._refresh()
@@ -298,6 +299,10 @@ class _LabelsWidget(QWidget):
             self._push(
                 undo=lambda: project.rename_label(saved_name, old_name, old_shortcut, old_description),
                 redo=lambda: project.rename_label(old_name, saved_name, new_shortcut, new_description),
+                description=(
+                    f"Rename Label '{old_name}' to '{saved_name}'" if saved_name != old_name
+                    else f"Edit Label '{old_name}'"
+                ),
             )
             self._warn_if_shortcut_collides(new_shortcut, excluding_name=new_name)
             self._refresh()
@@ -321,12 +326,13 @@ class _LabelsWidget(QWidget):
         self._push(
             undo=lambda: [project.restore_label(label, index) for index, label in removed],
             redo=lambda: project.remove_labels(names),
+            description=f"Remove Label '{names[0]}'" if len(names) == 1 else f"Remove {len(names)} Labels",
         )
         self._refresh()
 
-    def _push(self, undo, redo) -> None:
+    def _push(self, undo, redo, description: str) -> None:
         if self._undo_stack is not None:
-            self._undo_stack.push(Command(undo=undo, redo=redo))
+            self._undo_stack.push(Command(undo=undo, redo=redo, description=description))
 
 
 class LabelEditorDialog(QDialog):

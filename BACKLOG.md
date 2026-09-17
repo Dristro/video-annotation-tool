@@ -35,6 +35,13 @@ see `CHANGELOG.md [Unreleased]`. What's left is either a later phase
 - [ ] **Linux**: `tools.py` and `_mpv_bootstrap` already fall back to
       `PATH`/`find_library`; `make_icon.py --png` exists for a `.desktop`
       file; the spec's `BUNDLE` step is macOS-only. Untested.
+- [ ] **pip/PyPI**: the package already installs from git (`pipx install
+      "git+https://github.com/Dristro/video-annotation-tool.git@stable"`,
+      documented in the README); publishing to PyPI needs a `twine`/
+      trusted-publishing step in the release workflow and a decision on
+      the package name (`vat` is likely taken; e.g. `video-annotation-tool`
+      with the import name unchanged). The user has said they may go
+      this route.
 - [ ] `stable`'s user-facing `README.md` still describes the from-source
       install only. At the next promotion, point it at `docs/INSTALL.md`
       (or copy that content in) — see `CLAUDE.md` > Branches for the
@@ -42,13 +49,16 @@ see `CHANGELOG.md [Unreleased]`. What's left is either a later phase
 
 ## UI / UX polish (DaVinci-Resolve-likeness)
 
-- [x] Undo/redo now covers label/score add/rename/remove, the scoring
-      toggle, and break/link continuation, in addition to cut edits.
-- [ ] Undo/redo does **not** cover: Mark/Unmark Annotated, changing the
-      videos/project directory, the subfolder toggle, theme. All are
-      trivially re-doable by hand, so left out on purpose.
-- [ ] Undo has no visible history (no "Undo <what>" menu text). The
-      `Command` dataclass has no description field yet.
+- [x] Undo/redo covers every mutating action in the app: cut
+      add/edit/resize/delete, break/link continuation, label/score
+      add/rename/remove, the scoring toggle, Mark/Unmark Annotated,
+      Change Videos Directory, Change Project Directory (moves it back),
+      Include Subfolders, and the theme switch.
+- [x] The Edit menu shows what will be undone/redone ("Undo Add
+      Annotation", "Redo Mark Annotated") and is greyed out when empty.
+- [ ] Undo history is per session and cleared when switching projects
+      (commands close over the Project they were made on). A multi-level
+      history *panel* (like Photoshop's) is not planned.
 
 ## Cross-video continuation follow-ups
 

@@ -71,6 +71,21 @@ class AnnotationStore:
         entry.annotated = annotated
         self.save()
 
+    def remove_entry_if_empty(self, rel_path: str) -> bool:
+        """Drop a video's entry when it has no cuts (whatever its flag).
+        Undo of the first Mark/Unmark Annotated on a video needs this:
+        set_annotated() creates the entry, and "entry with annotated=False"
+        shows as "In progress" in the UI, which is not the same state as
+        "no entry" (see REQUIREMENT.md's Definitions). Returns True if
+        removed.
+        """
+        entry = self.videos.get(rel_path)
+        if entry is None or entry.cuts:
+            return False
+        del self.videos[rel_path]
+        self.save()
+        return True
+
     def add_cut(self, rel_path: str, cut: Cut) -> Cut:
         entry = self._entry(rel_path)
         entry.cuts.append(cut)

@@ -68,6 +68,14 @@ class Project:
     def set_annotated(self, rel_path: str, annotated: bool = True) -> None:
         self.annotation_store.set_annotated(rel_path, annotated)
 
+    def restore_annotated_state(self, rel_path: str, annotated: bool, had_entry: bool) -> None:
+        """Put a video's annotation status back exactly (undo of Mark/
+        Unmark Annotated): the flag, and whether an entry existed at all.
+        """
+        if not had_entry and self.annotation_store.remove_entry_if_empty(rel_path):
+            return
+        self.annotation_store.set_annotated(rel_path, annotated)
+
     # -- Cuts ------------------------------------------------------------
     def add_cut(
         self, rel_path: str, start: float, end: float, label: str = "",

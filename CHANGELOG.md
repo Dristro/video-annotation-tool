@@ -41,6 +41,18 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   absolute path recorded in `project.json` -- for a copy, into the
   original project. It's now re-homed to wherever it was opened from.
 
+### Added: undo/redo for everything else, and a visible undo history
+
+- **Added**: Mark/Unmark Annotated, Change Videos Directory, Change
+  Project Directory (undo moves the project back), Include Subfolders
+  and the theme switch are now undoable, so every mutating action in
+  the app is on the one stack. Undoing the first Mark Annotated on a
+  video restores it to "no entry", not "in progress".
+- **Added**: the Edit menu shows what Undo/Redo will do ("Undo Add
+  Annotation", "Redo Rename Label 'goal' to 'score'") and both items are
+  greyed out when there's nothing to do. The stack is cleared when
+  switching projects.
+
 ### Added: undo/redo for label & score edits and for continuation links
 
 - **Added**: adding, renaming and removing labels and scores, and

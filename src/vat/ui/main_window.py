@@ -148,12 +148,16 @@ class MainWindow(QMainWindow):
         quit_action.triggered.connect(self.close)
 
         edit_menu = self.menuBar().addMenu("&Edit")
-        undo_action = edit_menu.addAction("Undo")
-        undo_action.setShortcut(QKeySequence.StandardKey.Undo)
-        undo_action.triggered.connect(self._on_undo)
-        redo_action = edit_menu.addAction("Redo")
-        redo_action.setShortcut(QKeySequence.StandardKey.Redo)
-        redo_action.triggered.connect(self._on_redo)
+        self._undo_action = edit_menu.addAction("Undo")
+        self._undo_action.setShortcut(QKeySequence.StandardKey.Undo)
+        self._undo_action.triggered.connect(self._on_undo)
+        self._redo_action = edit_menu.addAction("Redo")
+        self._redo_action.setShortcut(QKeySequence.StandardKey.Redo)
+        self._redo_action.triggered.connect(self._on_redo)
+        # "Undo Add Annotation" / greyed out when there's nothing -- follows
+        # every push/undo/redo via the stack's change listener.
+        self._undo_stack.add_change_listener(self._refresh_undo_actions)
+        self._refresh_undo_actions()
         edit_menu.addSeparator()
         project_settings_action = edit_menu.addAction("Project Settings…")
         project_settings_action.triggered.connect(self._on_open_project_settings)
@@ -376,6 +380,7 @@ class MainWindow(QMainWindow):
         self._undo_stack.push(Command(
             undo=lambda: self._remove_cut_and_sync(rel, new_cut.id),
             redo=lambda: self._restore_cut_and_sync(rel, new_cut),
+            description="Add Annotation",
         ))
         self.inspector_panel.clear_pending()
         self._refresh_cuts_and_status(rel)
@@ -423,6 +428,7 @@ class MainWindow(QMainWindow):
                 rel, cut_id, old_cut.start, old_cut.end, old_cut.label, old_cut.scores, old_cut.justification
             ),
             redo=lambda: self._apply_cut_snapshot(rel, cut_id, new_start, new_end, label, scores, justification),
+            description="Edit Annotation",
         ))
 
     def _apply_cut_snapshot(
@@ -474,6 +480,7 @@ class MainWindow(QMainWindow):
             redo=lambda: self._apply_cut_snapshot(
                 rel, cut_id, start, end, old_cut.label, old_cut.scores, old_cut.justification
             ),
+            description="Resize Annotation",
         ))
 
     def _on_delete_cut(self, cut_id: str) -> None:
@@ -490,6 +497,7 @@ class MainWindow(QMainWindow):
             self._undo_stack.push(Command(
                 undo=lambda: self._restore_cut_and_sync(rel, old_cut),
                 redo=lambda: self._remove_cut_and_sync(rel, cut_id),
+                description="Delete Annotation",
             ))
         self._refresh_cuts_and_status(rel)
         self.refresh_playlist()  # annotation count for this video just changed
@@ -506,7 +514,25 @@ class MainWindow(QMainWindow):
     def _on_redo(self) -> None:
         self._undo_stack.redo()
 
+    def _refresh_undo_actions(self) -> None:
+        undo_text, redo_text = self._undo_stack.undo_text(), self._undo_stack.redo_text()
+        self._undo_action.setText(f"Undo {undo_text}" if undo_text else "Undo")
+        self._undo_action.setEnabled(self._undo_stack.can_undo())
+        self._redo_action.setText(f"Redo {redo_text}" if redo_text else "Redo")
+        self._redo_action.setEnabled(self._undo_stack.can_redo())
+
     def _on_set_theme(self, theme: str) -> None:
+        previous = app_settings.load_theme()
+        if theme == previous:
+            return
+        self._apply_theme(theme)
+        self._undo_stack.push(Command(
+            undo=lambda: self._apply_theme(previous),
+            redo=lambda: self._apply_theme(theme),
+            description=f"Switch to {theme.capitalize()} Theme",
+        ))
+
+    def _apply_theme(self, theme: str) -> None:
         # A global preference, not a per-project one -- saved to
         # app_settings' shared settings.json (~/Library/Application
         # Support/vat/) rather than this project's project.json, so it
@@ -517,6 +543,9 @@ class MainWindow(QMainWindow):
         if app is not None:
             apply_theme(app, theme)
         app_settings.save_theme(theme)
+        action = self._theme_actions.get(theme)
+        if action is not None and not action.isChecked():
+            action.setChecked(True)  # QActionGroup unchecks the other; triggered() doesn't fire
 
     def _on_break_continuation(self, cut_id: str) -> None:
         if self._current_video_path is None:
@@ -539,6 +568,7 @@ class MainWindow(QMainWindow):
         self._undo_stack.push(Command(
             undo=lambda: self._apply_continuation(rel, cut_id, old_id, old_forward),
             redo=lambda: self._apply_continuation(rel, cut_id, None, False),
+            description="Break Continuation Link",
         ))
 
     def _on_link_continuation(self, cut_id: str) -> None:
@@ -584,6 +614,7 @@ class MainWindow(QMainWindow):
         self._undo_stack.push(Command(
             undo=lambda: self._apply_continuation(rel, cut_id, old_id, old_forward, old_end),
             redo=lambda: self._apply_continuation(rel, cut_id, new_id, new_forward, new_end),
+            description="Link Continuation",
         ))
 
     def _apply_continuation(
@@ -625,35 +656,96 @@ class MainWindow(QMainWindow):
         if self._current_video_path is None:
             return
         rel = self.project.rel_path(self._current_video_path)
-        self.project.set_annotated(rel, annotated)
-        self._refresh_cuts_and_status(rel)
+        entry = self.project.get_entry(rel)
+        had_entry, was_annotated = entry is not None, bool(entry and entry.annotated)
+        if had_entry and was_annotated == annotated:
+            return  # already in that state: nothing to record
+        self._apply_annotated(rel, annotated)
+        self._undo_stack.push(Command(
+            undo=lambda: self._apply_annotated(rel, was_annotated, had_entry),
+            redo=lambda: self._apply_annotated(rel, annotated),
+            description="Mark Annotated" if annotated else "Unmark Annotated",
+        ))
+
+    def _apply_annotated(self, rel: str, annotated: bool, had_entry: bool = True) -> None:
+        if had_entry:
+            self.project.set_annotated(rel, annotated)
+        else:
+            self.project.restore_annotated_state(rel, annotated, had_entry=False)
+        if self._current_video_path and self.project.rel_path(self._current_video_path) == rel:
+            self._refresh_cuts_and_status(rel)
         self.refresh_playlist()
-        self.playlist_panel.select_path(self._current_video_path)
+        if self._current_video_path:
+            self.playlist_panel.select_path(self._current_video_path)
 
     # -- Project-level actions ------------------------------------------------------------
     def _on_change_videos_dir(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Choose Videos Directory", self.project.config.videos_dir)
-        if path:
-            self.project.set_videos_dir(path)
-            self.refresh_playlist()
+        if not path:
+            return
+        previous = self.project.config.videos_dir
+        self._apply_videos_dir(path)
+        chosen = self.project.config.videos_dir
+        if chosen == previous:
+            return  # same directory picked again
+        self._undo_stack.push(Command(
+            undo=lambda: self._apply_videos_dir(previous),
+            redo=lambda: self._apply_videos_dir(chosen),
+            description="Change Videos Directory",
+        ))
+
+    def _apply_videos_dir(self, path: str) -> None:
+        self.project.set_videos_dir(path)
+        self._current_video_path = None  # the old selection isn't in this directory
+        self.refresh_playlist()
 
     def _on_toggle_recursive_scan(self, checked: bool) -> None:
         if checked == self.project.config.recursive_scan:
-            return  # programmatic sync from _switch_project(), nothing to do
-        self.project.set_recursive_scan(checked)
+            return  # programmatic sync from _switch_project()/undo, nothing to do
+        self._apply_recursive_scan(checked)
+        self._undo_stack.push(Command(
+            undo=lambda: self._apply_recursive_scan(not checked),
+            redo=lambda: self._apply_recursive_scan(checked),
+            description="Include Subfolders" if checked else "Exclude Subfolders",
+        ))
+
+    def _apply_recursive_scan(self, enabled: bool) -> None:
+        self.project.set_recursive_scan(enabled)
+        if self._recursive_scan_action.isChecked() != enabled:
+            self._recursive_scan_action.setChecked(enabled)  # re-enters _on_toggle_recursive_scan as a no-op
         self.refresh_playlist()
 
     def _on_change_project_dir(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Choose New Project Directory")
         if not path:
             return
+        previous = self.project.config.project_dir
+        if not self._apply_project_dir(path):
+            return
+        moved_to = self.project.config.project_dir
+        if moved_to == previous:
+            return
+        self._undo_stack.push(Command(
+            undo=lambda: self._apply_project_dir(previous),
+            redo=lambda: self._apply_project_dir(moved_to),
+            description="Change Project Directory",
+        ))
+
+    def _apply_project_dir(self, path: str) -> bool:
+        """Move the project (files and all) and update everything that
+        shows or remembers its location. Undoing is just moving it back:
+        the previous directory is empty/gone after the move, so
+        move_project_dir()'s not-empty check doesn't get in the way.
+        """
         try:
             self.project.move_project_dir(path)
         except Exception as exc:  # noqa: BLE001 -- surfaced directly to the user
             QMessageBox.warning(self, "Cannot Move Project", str(exc))
-            return
+            return False
         self.setWindowTitle(f"Video Annotation Tool — {self.project.config.project_dir}")
         app_settings.save_last_project_dir(self.project.config.project_dir)
+        self._refresh_recent_menu()
+        return True
 
     def _on_open_project_settings(self, initial_tab: str = "labels") -> None:
         dialog = ProjectSettingsDialog(self.project, self, initial_tab=initial_tab, undo_stack=self._undo_stack)
@@ -719,6 +811,9 @@ class MainWindow(QMainWindow):
 
     def _switch_project(self, project: Project) -> None:
         self.project = project
+        # Every command on the stack closes over the *previous* Project;
+        # replaying one against a different project would be wrong.
+        self._undo_stack.clear()
         app_settings.save_last_project_dir(project.config.project_dir)
         self.setWindowTitle(f"Video Annotation Tool — {project.config.project_dir}")
         self.inspector_panel.set_labels(project.config.labels)

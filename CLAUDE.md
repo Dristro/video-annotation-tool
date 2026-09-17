@@ -226,9 +226,23 @@ src/vat/
                  always-visible panels this way: it's what makes the
                  controller logic testable without a display driving real
                  video playback.
-  app.py         QApplication bootstrap / entry point.
+  app.py         QApplication bootstrap / entry point. Also `--version`,
+                 `--doctor` (prints resolved deps/env, no Qt) and an
+                 optional project-dir argument.
   app_settings.py  Tiny ~/Library/Application Support/vat/settings.json
                  for remembering the last-opened project across launches.
+  runtime_deps.py  Startup check for libmpv/ffmpeg/ffprobe; main() turns
+                 its report into a dialog *before* importing MainWindow.
+  migrations.py  Schema upgrades for project.json / annotations.json
+                 (top-level on purpose: vat.project/__init__ imports
+                 Project, which imports both stores -- putting this under
+                 vat.project made a circular import).
+  media/tools.py Resolves ffmpeg/ffprobe to absolute paths (env override,
+                 PATH, then Homebrew prefixes). Every subprocess call site
+                 must go through it -- see "Finder has no PATH" below.
+packaging/       vat.spec (PyInstaller), make_icon.py, homebrew/Casks/vat.rb,
+                 README.md (release process). scripts/build_app.sh drives it.
+docs/INSTALL.md  User-facing install instructions (cask / zip / source).
 ```
 
 ### Two files per project, on purpose
@@ -248,6 +262,16 @@ src/vat/
   `AnnotationStore.rename_label_everywhere()` /
   `.rename_score_everywhere()`. Don't switch to id-based references without
   revisiting this requirement.
+
+Both files carry `schema_version` (1). Additive fields with a
+`from_dict` default (`justification`, continuation fields,
+`recursive_scan`) don't bump it; a shape change must, plus a one-step
+migration in `vat/migrations.py` (backup written first; a *newer* file is
+refused, never loaded best-effort). `project.json`'s `project_dir` is
+absolute and everything else is located relative to it, so
+`ProjectStore.load()` re-homes a folder that was moved or copied by hand.
+`recursive_scan` (File > Include Subfolders) keys nested videos as
+posix relative paths (`day1/cam2/clip.mp4`) in `annotations.json`.
 
 ### Scores (per-cut, optional, per-project)
 
@@ -323,6 +347,34 @@ before implementing (don't re-litigate without checking back):
     list (which otherwise drops the selection) -- this is what makes the
     save visibly "stick" instead of the panel going blank right after
     editing.
+
+### Undo/redo: one stack, pure-Project commands, a listener for views
+
+`UndoStack` (`project/undo_stack.py`) holds every reversible action: cut
+add/edit/resize/delete, break/link continuation, and -- since the launch
+pass -- label/score add/rename/remove and the scoring toggle, pushed by
+the settings widgets themselves (`_LabelsWidget`/`_ScoresWidget` take an
+optional `undo_stack`; `ProjectSettingsDialog` passes MainWindow's).
+Rules that make this work and are easy to break:
+
+- **Commands only touch `Project`, never widgets.** The settings dialog is
+  gone by the time Undo is pressed. MainWindow registers
+  `_sync_project_config_views` as a stack *listener* (runs after every
+  undo/redo) to push labels/scores/shortcuts back into the inspector and
+  re-select the cut that was selected.
+- **A rename's undo is a plain reverse rename**, not a per-cut snapshot,
+  and that is exact: by the time it runs, every later command has been
+  undone, so the only cuts carrying the new name are the ones the rename
+  gave it to. This depends on *everything* that could touch labels being
+  on the stack (which is why remove/add are too) -- don't add a
+  label-mutating path that bypasses it.
+- add/remove restore at the original index (`Project.restore_label` /
+  `restore_score_definition`) so order survives.
+- Continuation changes go through `AnnotationStore.set_continuation()`
+  (link fields + optional end) and `MainWindow._apply_continuation()`;
+  `break_continuation` is the `(None, False)` case. The re-link dialog
+  (`ui/continuation_link_dialog.py`) resolves ids with the same one-id-
+  per-chain rules as `_on_add_cut()` (`resolve_link()` is the pure form).
 
 ### Justification/description: a third input type, but not a set like scores
 
@@ -502,13 +554,20 @@ reasons:
    `DYLD_LIBRARY_PATH` landmine above), so no cache file was ever written
    and the full storm repeated forever.
 
-So: a bounded pool (`MAX_WORKERS = 3`) drains a queue, and a `_seen` set
-keyed on `(video path, cache dir)` guarantees each video is looked at
-**once per session** -- successes, failures, and already-cached alike.
+So: a bounded pool (`MAX_WORKERS = 3`) drains a queue, and per-video
+state keyed on `(video path, cache dir)` guarantees a success or cached
+hit is looked at **once per session**, and a *failure* only again after
+a growing delay (`RETRY_DELAYS_SECONDS`: 30 s, 2 min, 10 min, then given
+up) -- so a transient failure heals without a restart, but no amount of
+`refresh_playlist()` calls can re-run a doomed extraction back to back.
+`prioritize()` reorders the pending queue to whatever
+`PlaylistPanel.visible_rows_changed` reports (scroll + rebuild).
 Consequence to remember: the loader will not re-report a thumbnail after
 `PlaylistPanel.set_videos()` rebuilds the list and drops every row's icon,
 so `PlaylistPanel` caches the `QIcon`s it is given and re-applies them
-itself. If you change either side, check both.
+itself. If you change either side, check both. `WaveformLoader` is the
+same idea at n=1: one worker, a single latest-request slot, so rapid
+playlist stepping never queues a decode per skipped video.
 
 ### Playlist annotation counts need an explicit refresh trigger
 
@@ -573,6 +632,68 @@ schema) before implementing:
   the checkbox via `set_continuation_allowed()` when there's no next
   video to continue into.
 
+## Packaging: the .app depends on Homebrew's mpv/ffmpeg on purpose
+
+Decided with the user for the launch: `dist/VAT.app` (PyInstaller,
+`packaging/vat.spec`, built by `scripts/build_app.sh`) contains Python,
+`vat`, the Qt modules it imports and python-mpv's `mpv.py` -- **not**
+libmpv/ffmpeg/ffprobe. Those come from Homebrew, the cask declares them
+as dependencies, and `runtime_deps.check_runtime_dependencies()` reports
+them missing in a dialog at startup. Bundling them means relinking ~60
+transitive dylibs and fighting the OpenGL-symbol landmine above; deferred
+to the "any Mac / Linux" phase (`BACKLOG.md`). Ad-hoc signed only (no
+Developer ID yet); `build_app.sh` has the signing/notarization hooks.
+Release flow and the one-time tap setup: `packaging/README.md`.
+
+Two things a Finder-launched bundle taught us, both encoded in code and
+both easy to re-break:
+
+- **Finder has no PATH.** An app launched from Finder/Dock gets launchd's
+  `PATH=/usr/bin:/bin:/usr/sbin:/sbin` -- no `/opt/homebrew/bin`. Bare
+  `"ffmpeg"` in `subprocess.run()` worked from a Terminal and silently
+  found nothing from the bundle (thumbnails/waveforms/durations are all
+  best-effort, so nothing said so -- the same failure shape as the
+  `DYLD_LIBRARY_PATH` leak). Every call site goes through
+  `media/tools.tool_path()`. If you add a subprocess, use it. `vat
+  --doctor` prints what resolved to what; run it from
+  `dist/VAT.app/Contents/MacOS/VAT` under `env -i PATH=/usr/bin:/bin`
+  to see what Finder sees.
+- **The bundle must be tested with a *fresh* project.** `project.json`
+  stores its own absolute `project_dir`, and annotations/caches are
+  located relative to that. Testing the bundle against a `cp -R` of an
+  existing project wrote its thumbnails into the *original* project and
+  looked like "no thumbnails" for a whole debugging round. Fixed for
+  users too: `ProjectStore.load()` re-homes a moved/copied project to
+  the directory it was actually opened from.
+
+Verifying a build: `--version` and `codesign --verify` are what CI does;
+the meaningful check is opening a project in the built app and watching
+`.thumbnails/` fill (proves ffmpeg resolution *and* that PyInstaller's
+bootloader isn't setting any `DYLD_*` variable -- as of PyInstaller 6.22
+onedir it doesn't; `--doctor` shows `DYLD_* none`).
+
+## Verifying with a real display (the agent can now)
+
+Earlier sessions ran in a shell with no WindowServer session and left a
+list of "please confirm by hand" items in `BACKLOG.md`. As of 2026-09-17
+the agent's shell runs inside the user's Aqua session: `screencapture`
+works, launched windows are real, and the Render-API embedding,
+timeline/waveform/thumbnail behaviour and clean close were all verified
+from screenshots. Two lessons for the next time you launch the app from
+here:
+
+- **Launch with `HOME` pointed at a scratch dir** (`HOME=<scratch>/home
+  .venv/bin/vat <scratch>/project`). Opening a project records it as
+  the last-opened one in `~/Library/Application Support/vat/
+  settings.json`; don't clobber the user's real entry.
+- **The window pops up over the user's editor and they will close it.**
+  Every "the app self-terminated after 15-40 s with exit code 0" across
+  this and earlier sessions was a *spontaneous* window-system `Close`
+  event (instrumented with an event filter; confirmed by asking). That's
+  the app working correctly, not a bug. Say what you're about to launch
+  and expect it to be closed; get your screenshot within the first
+  ~10 s; don't launch two at once.
+
 ## Branches
 
 - `main` is the development branch (default; everything lands here first).
@@ -588,16 +709,14 @@ schema) before implementing:
   `stable` tracked. The user pushes; don't `git push` unless asked. A
   `LICENSE` (MIT) exists at the repo root — the user added it directly on
   GitHub, not through this codebase.
-- **Status as of 2026-08-22** (check `git log stable..main --oneline` for
-  the current truth — this note will go stale): `main` is 4 commits ahead
-  of `stable`, none yet promoted --
-  playlist-annotation-counts/single-scrub-control/timeline-double-click-edit/
-  label-contrast-fix/arrow-key-navigation-fix, cross-video continuing
-  annotations (REQUIREMENT.md #11), the play/pause button-resize fix +
-  notched playback-speed slider (REQUIREMENT.md #12), and the LICENSE
-  file. All are implemented, tested (152 tests passing at last count), and
-  verified via real launches, but are waiting on the user's own hands-on
-  testing before being merged into `stable`.
+- **Status as of 2026-09-17** (check `git log stable..main --oneline` for
+  the current truth — this note will go stale): `main` carries the whole
+  "launch prep" pass (version 1.0.0, packaging, cask, release workflow,
+  settings undo, continuation re-link, subfolder scanning, migrations,
+  loader bounding, `--doctor`; 400+ tests passing) on top of everything
+  from the 2026-08 note, none of it promoted to `stable` yet. Promoting
+  also needs `stable`'s README pointed at `docs/INSTALL.md`
+  (`BACKLOG.md`), and the actual release (tag + tap) is the user's step.
 - **`main` and `stable` each have their own `README.md`** (`main`'s is
   contributor-facing, `stable`'s is user-facing) -- this is deliberate, the
   project is meant to be pushed to GitHub for others to use and contribute
@@ -623,6 +742,8 @@ python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
 .venv/bin/vat                 # or: .venv/bin/python -m vat
 .venv/bin/pytest               # QT_QPA_PLATFORM=offscreen is set in tests/conftest.py
+.venv/bin/vat --doctor         # where libmpv/ffmpeg resolved, PATH, DYLD_* (no Qt)
+scripts/build_app.sh           # dist/VAT.app + zip + sha256 (needs .[build])
 ```
 
 ## Testing conventions

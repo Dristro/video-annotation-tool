@@ -16,8 +16,8 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   them as dependencies. See `packaging/README.md` and `docs/INSTALL.md`.
 - **Added**: `.github/workflows/release.yml` builds on an Apple Silicon
   runner when a `v*` tag is pushed and attaches the zip, its sha256 and a
-  ready-to-copy cask file to a GitHub Release; `ci.yml` runs the suite on
-  every push/PR.
+  ready-to-copy cask file to a GitHub Release (the existing `tests.yml`
+  keeps running the suite on every push/PR).
 - **Added**: `vat --version`, and `vat <project-dir>` to open a specific
   project (the cask installs the bundle's binary as `vat`).
 - **Added**: a startup dependency check (`vat/runtime_deps.py`). Missing
@@ -33,6 +33,13 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   `PATH`, then the Homebrew prefixes).
 - Version is now `vat.__version__` (1.0.0), read dynamically by
   pyproject and stamped into the bundle's Info.plist.
+- **Added**: `vat --doctor` prints where libmpv/ffmpeg/ffprobe resolved,
+  `PATH`, any `DYLD_*` variable and the dependency check -- paste it into
+  a bug report about "no thumbnails" or "won't start".
+- **Fixed**: a project folder moved or copied by hand (Finder, `cp -R`, a
+  synced drive) kept reading and writing its annotations at the *old*
+  absolute path recorded in `project.json` -- for a copy, into the
+  original project. It's now re-homed to wherever it was opened from.
 
 ### Added: undo/redo for label & score edits and for continuation links
 

@@ -15,9 +15,23 @@ one covers building and contributing.
 brew install mpv ffmpeg   # runtime deps
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
-.venv/bin/vat                  # run it
+.venv/bin/vat                  # run it (or: .venv/bin/vat ~/some/project)
 .venv/bin/pytest               # run the test suite
+.venv/bin/vat --doctor         # print how runtime deps resolved (for bug reports)
 ```
+
+## Building the .app / releasing
+
+```bash
+.venv/bin/pip install -e ".[dev,build]"
+scripts/build_app.sh           # -> dist/VAT.app, dist/VAT-<ver>-arm64.zip, .sha256
+```
+
+The bundle deliberately still depends on Homebrew's `mpv` and `ffmpeg`;
+the Homebrew cask (`packaging/homebrew/Casks/vat.rb`) declares them.
+Releases are built by `.github/workflows/release.yml` on a `v*` tag. The
+whole process, including the one-time tap setup, is in
+`packaging/README.md`; user-facing install steps are in `docs/INSTALL.md`.
 
 ## Before you touch anything, read `CLAUDE.md`
 

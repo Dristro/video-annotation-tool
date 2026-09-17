@@ -956,3 +956,79 @@ def test_undo_of_a_settings_rename_resyncs_the_inspector(window, monkeypatch) ->
     assert window.inspector_panel._label_combo.itemText(0).startswith("goal")  # listener resynced the combo
     assert window.project.get_entry("a.mp4").cuts[0].label == "goal"
     assert "goal" in window.inspector_panel._cuts_list.item(0).text()
+
+
+def test_link_continuation_completes_previous_video_front_half_and_is_undoable(two_video_window, monkeypatch) -> None:
+    from PySide6.QtWidgets import QDialog
+
+    from vat.ui import continuation_link_dialog
+
+    win = two_video_window
+    front = win.project.add_cut("a.mp4", 280.0, 300.0, "goal", continuation_id="chain", continues_forward=True)
+    back = win.project.add_cut("b.mp4", 0.0, 5.0, "goal")  # added without linking
+    win.playlist_panel.select_relative(1)  # -> b.mp4
+    win._on_video_selected(win.playlist_panel.current_path())
+    assert win.inspector_panel._pending_continuation_cut is not None  # banner: still pending
+
+    captured = {}
+
+    def _fake_exec(dialog) -> int:
+        captured["candidates"] = list(dialog._candidates)
+        dialog._candidate_radios[0].setChecked(True)
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(continuation_link_dialog.ContinuationLinkDialog, "exec", _fake_exec)
+    win.inspector_panel.select_cut_by_id(back.id)
+    win._on_link_continuation(back.id)
+
+    assert [c.id for c in captured["candidates"]] == [front.id]
+    linked = win.project.find_cut("b.mp4", back.id)
+    assert (linked.continuation_id, linked.continues_forward, linked.end) == ("chain", False, 5.0)
+    assert win.inspector_panel._pending_continuation_cut is None  # banner gone: completed now
+
+    win._on_undo()
+    assert win.project.find_cut("b.mp4", back.id).continuation_id is None
+    assert win.inspector_panel._pending_continuation_cut is not None
+    win._on_redo()
+    assert win.project.find_cut("b.mp4", back.id).continuation_id == "chain"
+
+
+def test_link_continuation_forward_sets_end_to_video_duration(two_video_window, monkeypatch) -> None:
+    from PySide6.QtWidgets import QDialog
+
+    from vat.ui import continuation_link_dialog
+
+    win = two_video_window
+    win._on_video_selected(win.playlist_panel.current_path())  # a.mp4, duration stubbed at 300
+    cut = win.project.add_cut("a.mp4", 250.0, 260.0, "goal")
+    win._refresh_cuts_and_status("a.mp4")
+
+    def _fake_exec(dialog) -> int:
+        assert dialog._forward_checkbox.isEnabled()  # b.mp4 exists to continue into
+        dialog._forward_checkbox.setChecked(True)
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(continuation_link_dialog.ContinuationLinkDialog, "exec", _fake_exec)
+    win.inspector_panel.select_cut_by_id(cut.id)
+    win._on_link_continuation(cut.id)
+
+    linked = win.project.find_cut("a.mp4", cut.id)
+    assert linked.continues_forward is True and linked.continuation_id
+    assert linked.end == 300.0
+    # And b.mp4 now sees it as pending.
+    assert win.project.pending_continuation("b.mp4", "a.mp4").id == cut.id
+
+    win._on_undo()
+    restored = win.project.find_cut("a.mp4", cut.id)
+    assert (restored.continues_forward, restored.continuation_id, restored.end) == (False, None, 260.0)
+
+
+def test_link_button_visibility_follows_selection(window) -> None:
+    window._current_video_path = os.path.join(window.project.config.videos_dir, "a.mp4")
+    cut = window.project.add_cut("a.mp4", 1.0, 2.0, "goal")
+    window._refresh_cuts_and_status("a.mp4")
+    panel = window.inspector_panel
+    assert panel._link_continuation_btn.isVisibleTo(panel) is False
+    panel.select_cut_by_id(cut.id)
+    assert panel._link_continuation_btn.isVisibleTo(panel) is True
+    assert panel._break_continuation_btn.isVisibleTo(panel) is False  # nothing to break yet

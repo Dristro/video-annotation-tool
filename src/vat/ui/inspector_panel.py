@@ -59,6 +59,7 @@ class InspectorPanel(QWidget):
     edit_cut_requested = Signal(str)  # label name (operates on selected_cut_id())
     delete_cut_requested = Signal(str)  # cut id
     break_continuation_requested = Signal(str)  # cut id
+    link_continuation_requested = Signal(str)  # cut id -- open the re-link dialog for it
     seek_to_cut_requested = Signal(str)  # cut id
     set_annotated_requested = Signal(bool)
     edit_labels_requested = Signal()
@@ -170,16 +171,23 @@ class InspectorPanel(QWidget):
         action_row.addWidget(self._add_cut_btn)
         mark_layout.addLayout(action_row)
 
-        # Only shown when the selected cut actually has a continuation
-        # link (either half) -- lets that link be severed without
-        # deleting the cut. Starting a *new* link is still only done at
-        # creation time via the "Continues into next video" checkbox /
-        # the "Start Here" banner; re-linking to a different cut isn't
-        # supported (BACKLOG.md).
+        # Continuation links on the *selected* cut. "Link…" is shown for
+        # any selected cut and opens ContinuationLinkDialog (set/change
+        # either direction after the fact); "Break" only when the cut
+        # actually has a link, and just severs it. Creating a link at add
+        # time still goes through the "Continues into next video" checkbox
+        # / the "Start Here" banner above -- this row is the after-the-fact
+        # equivalent for cuts that already exist.
+        link_row = QHBoxLayout()
+        self._link_continuation_btn = QPushButton("Link Continuation…")
+        self._link_continuation_btn.setVisible(False)
+        self._link_continuation_btn.clicked.connect(self._emit_link_continuation)
+        link_row.addWidget(self._link_continuation_btn)
         self._break_continuation_btn = QPushButton("Break Continuation Link")
         self._break_continuation_btn.setVisible(False)
         self._break_continuation_btn.clicked.connect(self._emit_break_continuation)
-        mark_layout.addWidget(self._break_continuation_btn)
+        link_row.addWidget(self._break_continuation_btn)
+        mark_layout.addLayout(link_row)
 
         layout.addWidget(self._mark_group)
 
@@ -514,6 +522,11 @@ class InspectorPanel(QWidget):
         if cut_id:
             self.break_continuation_requested.emit(cut_id)
 
+    def _emit_link_continuation(self) -> None:
+        cut_id = self.selected_cut_id()
+        if cut_id:
+            self.link_continuation_requested.emit(cut_id)
+
     def _emit_delete_cut(self) -> None:
         cut_id = self.selected_cut_id()
         if not cut_id:
@@ -557,11 +570,13 @@ class InspectorPanel(QWidget):
                 value = cut.scores.get(defn.name)
                 edit.setText("" if value is None else f"{value:g}")
             self._justification_input.setText(cut.justification)
+            self._link_continuation_btn.setVisible(True)
             self._break_continuation_btn.setVisible(cut.continuation_id is not None)
         else:
             for edit in self._score_inputs.values():
                 edit.clear()
             self._justification_input.clear()
+            self._link_continuation_btn.setVisible(False)
             self._break_continuation_btn.setVisible(False)
         self._pending_in = None
         self._pending_out = None

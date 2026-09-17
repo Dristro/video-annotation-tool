@@ -6,7 +6,16 @@ import uuid
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QShortcut
-from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMessageBox, QSplitter, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QFileDialog,
+    QMainWindow,
+    QMessageBox,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
+)
 
 from vat import app_settings
 from vat.constants import THUMBNAILS_DIR_NAME, WAVEFORMS_DIR_NAME
@@ -17,6 +26,7 @@ from vat.playback.thumbnail_loader import ThumbnailLoader
 from vat.playback.waveform_loader import WaveformLoader
 from vat.project.project import Project
 from vat.project.undo_stack import Command, UndoStack
+from vat.ui.continuation_link_dialog import ContinuationLinkDialog
 from vat.ui.inspector_panel import InspectorPanel
 from vat.ui.label_shortcuts import LabelShortcutManager
 from vat.ui.playlist_panel import PlaylistPanel
@@ -182,6 +192,7 @@ class MainWindow(QMainWindow):
         self.inspector_panel.edit_cut_requested.connect(self._on_edit_cut)
         self.inspector_panel.delete_cut_requested.connect(self._on_delete_cut)
         self.inspector_panel.break_continuation_requested.connect(self._on_break_continuation)
+        self.inspector_panel.link_continuation_requested.connect(self._on_link_continuation)
         self.inspector_panel.seek_to_cut_requested.connect(self._on_seek_to_cut)
         self.inspector_panel.set_annotated_requested.connect(self._on_set_annotated)
         self.inspector_panel.edit_labels_requested.connect(lambda: self._on_open_project_settings("labels"))
@@ -528,6 +539,51 @@ class MainWindow(QMainWindow):
         self._undo_stack.push(Command(
             undo=lambda: self._apply_continuation(rel, cut_id, old_id, old_forward),
             redo=lambda: self._apply_continuation(rel, cut_id, None, False),
+        ))
+
+    def _on_link_continuation(self, cut_id: str) -> None:
+        """Set/change the selected cut's continuation links after the fact
+        (ContinuationLinkDialog). Candidates for "completes" are the
+        previous video's front halves not already completed by *another*
+        cut in this video -- same one-hop adjacency rule as the banner.
+        """
+        if self._current_video_path is None:
+            return
+        rel = self.project.rel_path(self._current_video_path)
+        cut = self.project.find_cut(rel, cut_id)
+        if cut is None:
+            return
+        previous_path = self.playlist_panel.previous_path()
+        previous_rel = self.project.rel_path(previous_path) if previous_path else None
+        candidates = self.project.pending_continuations(rel, previous_rel)
+        if cut.continuation_id and not cut.continues_forward:
+            # This cut's own back-half link is "completed" from the
+            # banner's point of view; offer it so it can be kept.
+            previous_entry = self.project.get_entry(previous_rel) if previous_rel else None
+            own = next(
+                (c for c in (previous_entry.cuts if previous_entry else [])
+                 if c.continues_forward and c.continuation_id == cut.continuation_id),
+                None,
+            )
+            if own is not None and own not in candidates:
+                candidates.insert(0, own)
+        dialog = ContinuationLinkDialog(
+            cut, candidates, self.playlist_panel.next_path() is not None, previous_rel, self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        new_id, new_forward = dialog.resolve()
+        if (new_id, new_forward) == (cut.continuation_id, cut.continues_forward):
+            return
+        # A front half's end is the video's end, as for a newly-added
+        # continuing cut. Only when the duration is actually known.
+        duration = self.video_panel.duration()
+        new_end = duration if (new_forward and not cut.continues_forward and duration > cut.start) else None
+        old_id, old_forward, old_end = cut.continuation_id, cut.continues_forward, cut.end
+        self._apply_continuation(rel, cut_id, new_id, new_forward, new_end)
+        self._undo_stack.push(Command(
+            undo=lambda: self._apply_continuation(rel, cut_id, old_id, old_forward, old_end),
+            redo=lambda: self._apply_continuation(rel, cut_id, new_id, new_forward, new_end),
         ))
 
     def _apply_continuation(

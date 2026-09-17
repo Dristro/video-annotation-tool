@@ -5,6 +5,84 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added: macOS .app bundle, Homebrew cask, release pipeline (launch prep)
+
+- **Added**: `scripts/build_app.sh` builds `dist/VAT.app` with PyInstaller
+  (`packaging/vat.spec`), ad-hoc signs it (or signs + notarizes when
+  `VAT_SIGN_IDENTITY`/`VAT_NOTARY_PROFILE` are set), zips it and prints
+  the sha256. The icon is drawn at build time by `packaging/make_icon.py`.
+  libmpv/ffmpeg are deliberately *not* bundled -- they come from
+  Homebrew, and the cask (`packaging/homebrew/Casks/vat.rb`) declares
+  them as dependencies. See `packaging/README.md` and `docs/INSTALL.md`.
+- **Added**: `.github/workflows/release.yml` builds on an Apple Silicon
+  runner when a `v*` tag is pushed and attaches the zip, its sha256 and a
+  ready-to-copy cask file to a GitHub Release; `ci.yml` runs the suite on
+  every push/PR.
+- **Added**: `vat --version`, and `vat <project-dir>` to open a specific
+  project (the cask installs the bundle's binary as `vat`).
+- **Added**: a startup dependency check (`vat/runtime_deps.py`). Missing
+  libmpv shows a dialog with the `brew install` command instead of a
+  traceback from inside python-mpv's import; missing ffmpeg/ffprobe warns
+  that thumbnails/waveforms/durations will be unavailable and continues.
+- **Fixed**: ffmpeg/ffprobe were invoked by bare name, which only works
+  with the user's shell `PATH`. An app launched from Finder/the Dock gets
+  launchd's minimal `PATH` (no `/opt/homebrew/bin`), so every subprocess
+  would have failed silently -- the same failure shape as the
+  `DYLD_LIBRARY_PATH` leak. All call sites now resolve through
+  `vat/media/tools.py` (env override `VAT_FFMPEG`/`VAT_FFPROBE`, then
+  `PATH`, then the Homebrew prefixes).
+- Version is now `vat.__version__` (1.0.0), read dynamically by
+  pyproject and stamped into the bundle's Info.plist.
+
+### Added: undo/redo for label & score edits and for continuation links
+
+- **Added**: adding, renaming and removing labels and scores, and
+  toggling scoring on/off, are now on the same undo stack as cut edits
+  (Cmd+Z / Shift+Cmd+Z). Undoing a rename also reverts it in every cut it
+  was propagated to; undoing a remove restores the original order.
+- **Added**: "Break Continuation Link" is undoable.
+- **Added**: **Link Continuation…** on any selected cut -- set or change
+  its cross-video links after the fact: mark it as continuing into the
+  next video (its end becomes the video's end), and/or pick which of the
+  previous video's continuing annotations it completes. Undoable.
+  Previously a broken link could only be recreated by delete + re-add.
+
+### Added: optional subfolder scanning
+
+- **Added**: File > Include Subfolders (per project, off by default) lists
+  videos in subfolders of the videos directory as `subfolder/name.mp4`;
+  that path is also their key in `annotations.json`, so annotations stay
+  attached whichever way the folder is scanned.
+
+### Added: schema migration framework
+
+- **Added**: `vat/migrations.py`. `project.json`/`annotations.json` are
+  upgraded one schema step at a time on load, after a `<file>.v<N>.bak`
+  copy is written; a file from a *newer* app version is refused with a
+  clear message rather than loaded best-effort and rewritten. No real
+  migrations exist yet (both files are still version 1).
+
+### Changed: thumbnail retries, viewport-first extraction, bounded waveform decoding
+
+- **Changed**: a thumbnail extraction that fails is retried after 30 s,
+  2 min and 10 min, then given up on for the session -- a briefly
+  unmounted drive heals without restarting the app, while a permanently
+  broken file still can't trigger the refresh storm.
+- **Changed**: the rows currently visible in the playlist are extracted
+  first; scrolling to the bottom of a long list no longer waits for
+  everything above.
+- **Changed**: waveform decoding uses a single worker with a
+  latest-request slot, so holding Down through the playlist decodes at
+  most two videos instead of every one passed over.
+
+### Added: tests and measurement tooling
+
+- `tests/test_mpv_player.py` covers the libmpv wrapper against a fake
+  `mpv` module (locale guard ordering, render-API config, observer
+  normalisation, render-context lifecycle, shutdown order).
+- `scripts/measure_footprint.py` launches the app against a project and
+  samples RSS/CPU for the REQUIREMENT.md budget check.
+
 ### Fixed: every ffmpeg/ffprobe subprocess silently aborting (thumbnails, waveforms, durations)
 
 - **Fixed**: the libmpv bootstrap workaround set `DYLD_LIBRARY_PATH`

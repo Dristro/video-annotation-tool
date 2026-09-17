@@ -228,3 +228,21 @@ def test_insert_label_and_score_definition_restore_order(tmp_project_dir, tmp_vi
     reloaded = ProjectStore.load(tmp_project_dir)
     assert reloaded.config.label_names() == ["a", "b", "c"]
     assert reloaded.config.score_definition_names() == ["T", "U"]
+
+
+def test_load_rehomes_a_project_dir_that_was_moved_or_copied_by_hand(tmp_path, tmp_videos_dir) -> None:
+    import shutil
+
+    original = tmp_path / "original"
+    ProjectStore.create(str(original), tmp_videos_dir)
+    copied = tmp_path / "copied"
+    shutil.copytree(original, copied)
+
+    store = ProjectStore.load(str(copied))
+
+    assert store.config.project_dir == str(copied.resolve())
+    assert store.config_path == copied / "project.json"
+    on_disk = ProjectStore.load(str(copied)).config.project_dir
+    assert on_disk == str(copied.resolve())
+    # The original is untouched.
+    assert ProjectStore.load(str(original)).config.project_dir == str(original.resolve())

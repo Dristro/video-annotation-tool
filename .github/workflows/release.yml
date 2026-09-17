@@ -1,0 +1,59 @@
+name: Release
+
+# Push a tag like v1.0.0 (matching vat.__version__) to build the .app on
+# an Apple Silicon runner, attach the zip + sha256 + a ready-to-copy cask
+# file to a GitHub Release, and run the smoke test. See packaging/README.md.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos-arm64:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install runtime tools
+        run: brew install mpv ffmpeg
+      - name: Install package
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -e ".[dev,build]"
+      - name: Check tag matches vat.__version__
+        run: |
+          VERSION="$(PYTHONPATH=src .venv/bin/python -c 'import vat; print(vat.__version__)')"
+          echo "version=$VERSION" >> "$GITHUB_ENV"
+          if [ "v$VERSION" != "${GITHUB_REF_NAME}" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match vat.__version__ ($VERSION)" >&2; exit 1
+          fi
+      - name: Run tests
+        run: .venv/bin/pytest -q
+      - name: Build .app
+        # Ad-hoc signed. To ship a notarized build, add the Developer ID
+        # certificate + notarytool credentials as secrets and export
+        # VAT_SIGN_IDENTITY / VAT_NOTARY_PROFILE here.
+        run: scripts/build_app.sh
+      - name: Smoke test the bundle
+        run: |
+          dist/VAT.app/Contents/MacOS/VAT --version
+          codesign --verify --deep --strict dist/VAT.app
+      - name: Fill sha256 into the cask
+        run: |
+          SHA="$(cut -d' ' -f1 dist/VAT-${version}-arm64.zip.sha256)"
+          sed -e "s/^  version \".*\"/  version \"${version}\"/" \
+              -e "s/^  sha256 \".*\".*/  sha256 \"${SHA}\"/" \
+              packaging/homebrew/Casks/vat.rb > dist/vat.rb
+          cat dist/vat.rb
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/VAT-${{ env.version }}-arm64.zip
+            dist/VAT-${{ env.version }}-arm64.zip.sha256
+            dist/vat.rb
+          generate_release_notes: true

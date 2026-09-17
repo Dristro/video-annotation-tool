@@ -57,9 +57,20 @@ class ProjectStore:
         data = json.loads(config_path.read_text())
         data, migrated = upgrade(data, config_path, SCHEMA_VERSION, PROJECT_MIGRATIONS, "project")
         config = ProjectConfig.from_dict(data)
+        # project.json records its own directory as an absolute path, and
+        # everything else (annotations.json, the thumbnail/waveform caches)
+        # is located relative to *that*, not to where the file was actually
+        # read from. So a project folder moved or copied by hand (Finder,
+        # a synced drive, `cp -R`) would keep reading and writing the
+        # annotations at its OLD location -- silently, and for a copy,
+        # into the original project. Re-home it to where it really is.
+        actual_dir = str(Path(project_dir).resolve())
+        rehomed = config.project_dir != actual_dir
+        if rehomed:
+            config.project_dir = actual_dir
         store = cls(config)
-        if migrated:
-            store.save()  # rewrite at the current schema version, exactly once
+        if migrated or rehomed:
+            store.save()  # rewrite at the current schema version / location, exactly once
         return store
 
     def save(self) -> None:

@@ -27,6 +27,10 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="vat", description="Video Annotation Tool")
     parser.add_argument("--version", action="version", version=f"vat {__version__}")
     parser.add_argument(
+        "--doctor", action="store_true",
+        help="print how the app resolves its runtime dependencies (for bug reports) and exit",
+    )
+    parser.add_argument(
         "project_dir", nargs="?", default=None,
         help="project directory to open (defaults to the last-opened project)",
     )
@@ -51,8 +55,40 @@ def _check_dependencies_or_explain(parent=None) -> bool:
     return True
 
 
+def doctor_report() -> str:
+    """Everything a bug report about "no thumbnails" / "won't start" needs:
+    where each runtime dependency was (or wasn't) found, and the parts of
+    the environment that have bitten before (PATH, any DYLD_* variable --
+    see _mpv_bootstrap.libmpv_discoverable()). Pure: no Qt, no dialogs.
+    """
+    import os
+    import platform
+
+    from vat.media.tools import find_tool
+    from vat.playback._mpv_bootstrap import locate_libmpv
+
+    lines = [
+        f"vat {__version__}",
+        f"python {platform.python_version()} ({sys.executable})",
+        f"platform {platform.platform()} {platform.machine()}",
+        f"frozen {getattr(sys, 'frozen', False)}",
+        f"libmpv {locate_libmpv() or 'NOT FOUND'}",
+    ]
+    for tool in ("ffmpeg", "ffprobe"):
+        lines.append(f"{tool} {find_tool(tool) or 'NOT FOUND'}")
+    lines.append(f"PATH {os.environ.get('PATH', '')}")
+    dyld = {k: v for k, v in os.environ.items() if k.startswith("DYLD_")}
+    lines.append(f"DYLD_* {dyld if dyld else 'none (good)'}")
+    report = check_runtime_dependencies()
+    lines.append("dependencies " + ("ok" if report.ok else report.message().replace(chr(10), " ")))
+    return "\n".join(lines)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
+    if args.doctor:
+        print(doctor_report())
+        return 0
     app = QApplication(sys.argv)
     apply_theme(app, app_settings.load_theme())
 

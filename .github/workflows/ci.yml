@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main, stable]
+  pull_request:
+
+jobs:
+  test:
+    # Apple Silicon runner: matches the target machine, and Homebrew's
+    # libmpv/ffmpeg install cleanly there for the tests that touch them.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install runtime tools
+        run: brew install mpv ffmpeg
+      - name: Install package
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -e ".[dev]"
+      - name: Run tests (offscreen)
+        run: .venv/bin/pytest -q
+      - name: Runtime dependency check
+        run: |
+          PYTHONPATH=src .venv/bin/python -c "from vat.runtime_deps import check_runtime_dependencies as c; r=c(); print(r); assert r.ok, r.message()"

@@ -51,3 +51,21 @@ def test_version_matches_pyproject_dynamic_source() -> None:
 
     assert __version__.count(".") == 2
     assert all(part.isdigit() for part in __version__.split("."))
+
+
+def test_doctor_report_lists_every_dependency_and_env_landmine(monkeypatch) -> None:
+    from vat import app as app_module
+
+    monkeypatch.setenv("DYLD_LIBRARY_PATH", "/leaked")
+    report = app_module.doctor_report()
+    for key in ("vat ", "python ", "libmpv ", "ffmpeg ", "ffprobe ", "PATH ", "DYLD_* ", "dependencies "):
+        assert key in report
+    assert "/leaked" in report
+
+
+def test_doctor_flag_exits_without_a_qapplication(capsys, monkeypatch) -> None:
+    from vat import app as app_module
+
+    monkeypatch.setattr(app_module, "QApplication", None)  # would blow up if reached
+    assert app_module.main(["--doctor"]) == 0
+    assert "ffprobe" in capsys.readouterr().out

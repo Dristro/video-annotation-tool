@@ -242,3 +242,20 @@ def test_recursive_scan_setting_persists_and_drives_listing(tmp_project_dir, tmp
     assert rel == "sub/n.mp4"
     reopened.add_cut(rel, 0.0, 1.0, "goal")
     assert "sub/n.mp4" in reopened.annotation_store.videos
+
+
+def test_opening_a_copied_project_keeps_annotations_with_the_copy(tmp_path, tmp_videos_dir) -> None:
+    import shutil
+
+    original = tmp_path / "original"
+    project = Project.create(str(original), tmp_videos_dir)
+    project.add_cut("a.mp4", 1.0, 2.0, "goal")
+    copied = tmp_path / "copied"
+    shutil.copytree(original, copied)
+
+    reopened = Project.open(str(copied))
+    reopened.add_cut("a.mp4", 3.0, 4.0, "goal")
+
+    assert reopened.annotation_store.path == copied / "annotations.json"
+    assert len(Project.open(str(copied)).get_entry("a.mp4").cuts) == 2
+    assert len(Project.open(str(original)).get_entry("a.mp4").cuts) == 1  # original untouched
